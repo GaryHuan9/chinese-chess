@@ -17,7 +17,7 @@ pub enum Piece {
 }
 
 impl Piece {
-    pub fn from_char(value: char) -> Self {
+    pub fn from_char(value: char) -> Option<Self> {
         let piece_type = match value.to_ascii_lowercase() {
             'k' => PieceType::King,
             'a' => PieceType::Advisor,
@@ -26,9 +26,13 @@ impl Piece {
             'r' => PieceType::Rook,
             'c' => PieceType::Cannon,
             'p' => PieceType::Pawn,
-            _ => panic!("Unknown character for Piece {value}"),
+            _ => return None,
         };
 
-        if value.is_ascii_uppercase() { Piece::White(piece_type) } else { Piece::Black(piece_type) }
+        if value.is_ascii_uppercase() {
+            Some(Piece::White(piece_type))
+        } else {
+            Some(Piece::Black(piece_type))
+        }
     }
 }
