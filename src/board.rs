@@ -1,105 +1,82 @@
+use crate::location::Location;
 use crate::piece::Piece;
+use std::fmt::Formatter;
+use std::ops::{Index, IndexMut};
+use std::str::Chars;
 
 pub struct Board {
-    pieces: Vec<Piece>,
-    captured: Vec<Piece>,
-    white_turn: bool,
+    pieces: Vec<Option<Piece>>,
 }
 
 impl Board {
     pub const WIDTH: i8 = 9;
     pub const HEIGHT: i8 = 10;
 
-    pub const STARTING_FEN: &str =
-        "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR w - - 0 1";
-
-    fn new() -> Self {
-        Self {
-            pieces: vec![Piece::None; (Self::WIDTH * Self::HEIGHT) as usize],
-            captured: Vec::new(),
-            white_turn: true,
-        }
+    pub fn new() -> Self {
+        Self { pieces: vec![None; (Self::WIDTH * Self::HEIGHT) as usize] }
     }
 
-    fn from_fen(fen: &str) -> Option<Self> {
-        let mut location = Location::new().shift_y(Self::HEIGHT - 1)?;
+    pub fn from_fen(fen: &mut Chars<'_>) -> Option<Self> {
         let mut board = Self::new();
-        let mut chars = fen.chars();
+        let mut y = Location::new().shift_y(Self::HEIGHT - 1).unwrap();
+        let mut x = 0;
 
-        for current in &mut chars {
+        for current in fen {
             match current {
                 ' ' => break,
-                '/' => location = location.shift_y(-1)?,
-                _ => {
-                    let shift = if let Some(piece) = Piece::from_char(current) {
-                        board.pieces[location.index()] = piece;
-                        1
-                    } else if let Some(digit) = current.to_digit(10) {
-                        digit
-                    } else {
+                '/' => {
+                    if x != Self::WIDTH {
                         return None;
-                    };
+                    }
+                    x = 0;
+                    y = y.shift_y(-1)?;
+                }
+                '0'..='9' => x += current.to_digit(10).unwrap() as i8,
+                _ => {
+                    let piece = Piece::from_char(current)?;
+                    board[y.shift_x(x).unwrap()] = Some(piece);
+                    x += 1;
                 }
             }
         }
 
-        for current in &mut chars {}
-
         Option::from(board)
     }
+
+    pub fn opening() -> Self {
+        Self::from_fen(&mut "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR".chars()).unwrap()
+    }
 }
 
-#[derive(Copy, Clone)]
-pub struct Location {
-    x: i8,
-    y: i8,
+impl Index<Location> for Board {
+    type Output = Option<Piece>;
+    fn index(&self, index: Location) -> &Self::Output {
+        &self.pieces[index.index()]
+    }
 }
 
-impl Location {
-    pub fn new() -> Self {
-        Self { x: 0, y: 0 }
+impl IndexMut<Location> for Board {
+    fn index_mut(&mut self, index: Location) -> &mut Self::Output {
+        &mut self.pieces[index.index()]
     }
+}
 
-    pub fn from_index(index: usize) -> Option<Self> {
-        if index > i8::MAX as usize {
-            return None;
+impl std::fmt::Display for Board {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for y in (0..Self::HEIGHT).rev() {
+            write!(f, "{y} ")?;
+            for x in 0..Self::WIDTH {
+                if let Some(piece) = self[Location::from_xy(x, y).unwrap()] {
+                    write!(f, "{} ", piece)?;
+                } else {
+                    write!(f, "   ")?;
+                }
+            }
+            writeln!(f)?;
         }
-        let x = index as i8 % Board::WIDTH;
-        let y = index as i8 / Board::WIDTH;
-        Self::new().shift_x(x)?.shift_y(y)
-    }
-
-    pub fn shift_x(&self, value: i8) -> Option<Self> {
-        let new_x = self.x + value;
-        if 0 > new_x || new_x >= Board::WIDTH {
-            return None;
+        for char in 'A'..='I' {
+            write!(f, "  {char}")?;
         }
-        Some(Self {
-            x: new_x,
-            y: self.y,
-        })
-    }
-
-    pub fn shift_y(&self, value: i8) -> Option<Self> {
-        let new_y = self.y + value;
-        if 0 > new_y || new_y >= Board::HEIGHT {
-            return None;
-        }
-        Some(Self {
-            x: self.x,
-            y: new_y,
-        })
-    }
-
-    pub fn index(&self) -> usize {
-        (self.x + self.y * Board::WIDTH) as usize
-    }
-
-    pub fn x(&self) -> i8 {
-        self.x
-    }
-
-    pub fn y(&self) -> i8 {
-        self.y
+        writeln!(f)
     }
 }
