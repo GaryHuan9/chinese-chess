@@ -35,12 +35,10 @@ impl Game {
         let piece = self.board[mv.from].unwrap();
         let capture = self.board[mv.to];
 
-        assert_eq!(matches!(piece, Piece::Red(_)), self.red_turn);
-        assert_eq!(matches!(piece, Piece::Black(_)), !self.red_turn);
+        assert_eq!(self.red_turn, piece.is_red());
 
         if let Some(capture) = capture {
-            assert_eq!(matches!(capture, Piece::Black(_)), self.red_turn);
-            assert_eq!(matches!(capture, Piece::Red(_)), !self.red_turn);
+            assert_ne!(self.red_turn, capture.is_red());
         }
 
         self.board[mv.from] = None;
@@ -59,6 +57,10 @@ impl Game {
         self.board[mv.to] = capture;
 
         Some(mv)
+    }
+
+    pub fn fill_moves(&self, moves: &mut Vec<Move>) {
+        self.board.fill_moves(moves, self.red_turn);
     }
 }
 

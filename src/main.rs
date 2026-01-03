@@ -8,6 +8,16 @@ fn main() {
     loop {
         std::println!("{}", game);
 
+        let mut moves = vec![];
+        game.fill_moves(&mut moves);
+
+        for mv in moves {
+            println!("{}{}", mv.from, mv.to);
+            // game.play(mv);
+            // println!("{}", game);
+            // game.undo();
+        }
+
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         let input = input.trim().to_ascii_lowercase();

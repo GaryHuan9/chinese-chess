@@ -20,7 +20,7 @@ impl Location {
     }
 
     pub fn from_xy(x: i8, y: i8) -> Option<Self> {
-        Self::new().shift_x(x)?.shift_y(y)
+        Self::new().shift_xy(x, y)
     }
 
     pub fn from_index(index: usize) -> Option<Self> {
@@ -38,20 +38,24 @@ impl Location {
         Self::from_xy(x.wrapping_sub(b'A') as i8, y.wrapping_sub(b'0') as i8)
     }
 
-    pub fn shift_x(&self, value: i8) -> Option<Self> {
-        let new_x = self.x + value;
+    pub fn shift_x(&self, y: i8) -> Option<Self> {
+        let new_x = self.x + y;
         if 0 > new_x || new_x >= Board::WIDTH {
             return None;
         }
         Some(Self { x: new_x, y: self.y })
     }
 
-    pub fn shift_y(&self, value: i8) -> Option<Self> {
-        let new_y = self.y + value;
+    pub fn shift_y(&self, x: i8) -> Option<Self> {
+        let new_y = self.y + x;
         if 0 > new_y || new_y >= Board::HEIGHT {
             return None;
         }
         Some(Self { x: self.x, y: new_y })
+    }
+
+    pub fn shift_xy(&self, x: i8, y: i8) -> Option<Self> {
+        self.shift_x(x)?.shift_y(y)
     }
 
     pub fn index(&self) -> usize {
@@ -64,6 +68,10 @@ impl Location {
 
     pub fn y(&self) -> i8 {
         self.y
+    }
+
+    pub fn normalize(&self, red: bool) -> Self {
+        if red { *self } else { Self { x: self.x, y: Board::HEIGHT - self.y - 1 } }
     }
 }
 impl std::fmt::Display for Location {
