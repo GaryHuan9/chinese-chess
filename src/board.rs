@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use std::ops::{Index, IndexMut};
 use std::str::Chars;
 
+#[derive(Clone)]
 pub struct Board {
     pieces: Vec<Option<Piece>>,
 }
@@ -51,7 +52,29 @@ impl Board {
         self[location].is_some()
     }
 
-    pub fn fill_moves(&self, moves: &mut Vec<Move>, red: bool) {
+    pub fn iter_legal_moves(&self, red: bool) -> impl Iterator {
+        let mut copy = self.clone();
+
+        self.iter_basic_moves(red).filter(|&mv: &Move| {
+            let piece = copy[mv.from];
+            let capture = copy[mv.to];
+            copy[mv.from] = None;
+            copy[mv.to] = piece;
+
+            let king = self.pieces.iter().position(|piece| *piece == Some(Piece::from_kind(PieceKind::King, red)));
+            let king = Location::from_index(king.unwrap());
+            let mut legal = true;
+
+            copy.iter_basic_moves(!red);
+
+            copy[mv.from] = piece;
+            copy[mv.to] = capture;
+            true
+        })
+    }
+
+    pub fn iter_basic_moves(&self, red: bool) -> impl Iterator {
+        let mut moves = vec![];
         for y in 0..Self::HEIGHT {
             for x in 0..Self::WIDTH {
                 let from = Location::from_xy(x, y).unwrap();
@@ -81,6 +104,19 @@ impl Board {
                         add(from.shift_x(-1));
                         add(from.shift_y(1));
                         add(from.shift_y(-1));
+
+                        let mut current = from.normalize(red);
+                        loop {
+                            let Some(to) = current.shift_y(1) else { break };
+                            current = to;
+
+                            let Some(piece) = self[to.normalize(red)] else { continue };
+                            if piece.kind() == PieceKind::King && piece.is_red() != red {
+                                moves.push(Move { from, to });
+                            }
+
+                            break;
+                        }
                     }
                     PieceKind::Advisor => {
                         let x = from.x() - Self::WIDTH / 2;
@@ -190,6 +226,7 @@ impl Board {
                 }
             }
         }
+        moves.into_iter()
     }
 }
 
