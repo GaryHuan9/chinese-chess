@@ -1,8 +1,20 @@
+use chinese_chess::board::Board;
 use chinese_chess::game::Game;
 use chinese_chess::location::{Location, Move};
 use std::io;
 
 fn main() {
+    let mut board = Board::from_fen(&mut "CRH1k1e2/3ca4/4ea3/9/2hr5/9/9/4E4/4A4/4KA3".chars()).unwrap();
+    println!("{}", board);
+    println!("{}", board.iter_legal_moves(true).count());
+
+    for mv in board.iter_legal_moves(true).collect::<Vec<Move>>() {
+        let (_, capture) = board.play(mv);
+        println!("{}", board);
+        board.undo(mv, capture);
+    }
+
+    return;
     let mut game = Game::opening();
 
     loop {
@@ -12,7 +24,7 @@ fn main() {
         game.fill_moves(&mut moves);
 
         for mv in moves {
-            println!("{}{}", mv.from, mv.to);
+            // println!("{}{}", mv.from, mv.to);
             // game.play(mv);
             // println!("{}", game);
             // game.undo();

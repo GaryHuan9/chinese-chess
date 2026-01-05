@@ -14,7 +14,9 @@ impl Board {
     pub const HEIGHT: i8 = 10;
 
     pub fn new() -> Self {
-        Self { pieces: vec![None; (Self::WIDTH * Self::HEIGHT) as usize] }
+        Self {
+            pieces: vec![None; (Self::WIDTH * Self::HEIGHT) as usize],
+        }
     }
 
     pub fn from_fen(fen: &mut Chars<'_>) -> Option<Self> {
@@ -34,7 +36,7 @@ impl Board {
                 }
                 '0'..='9' => x += current.to_digit(10).unwrap() as i8,
                 _ => {
-                    let piece = Piece::from_char(current)?;
+                    let piece = Piece::from_fen_char(current)?;
                     board[y.shift_x(x).unwrap()] = Some(piece);
                     x += 1;
                 }
@@ -48,32 +50,76 @@ impl Board {
         Self::from_fen(&mut "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR".chars()).unwrap()
     }
 
+    pub fn fen(&self) -> String {
+        let mut result = String::new();
+        let spaces = |last_piece: i8, x| {
+            if last_piece < x {
+                (x - last_piece).to_string()
+            } else {
+                String::new()
+            }
+        };
+        for y in (0..Self::HEIGHT).rev() {
+            let mut last_piece = 0;
+            for x in 0..Self::WIDTH {
+                let location = Location::from_xy(x, y).unwrap();
+                let Some(piece) = self[location] else { continue };
+
+                result.push_str(&spaces(last_piece, x));
+                result.push(piece.fen_char());
+                last_piece = x + 1
+            }
+
+            result.push_str(&spaces(last_piece, Self::WIDTH));
+            result.push('/');
+        }
+
+        result.pop();
+        result
+    }
+
+    pub fn play(&mut self, mv: Move) -> (Piece, Option<Piece>) {
+        assert_ne!(mv.from, mv.to);
+        let piece = self[mv.from].unwrap();
+        self[mv.from] = None;
+
+        let capture = self[mv.to];
+        self[mv.to] = Some(piece);
+        (piece, capture)
+    }
+
+    pub fn undo(&mut self, mv: Move, capture: Option<Piece>) {
+        assert!(self[mv.from].is_none());
+        self[mv.from] = self[mv.to];
+        self[mv.to] = capture;
+    }
+
     pub fn is_occupied(&self, location: Location) -> bool {
         self[location].is_some()
     }
 
-    pub fn iter_legal_moves(&self, red: bool) -> impl Iterator {
+    pub fn find_king(&self, red: bool) -> Option<Location> {
+        let king = Some(Piece::from_kind(PieceKind::King, red));
+        let predicate = |piece: &Option<Piece>| *piece == king;
+        Location::from_index(self.pieces.iter().position(predicate)?)
+    }
+
+    pub fn iter_legal_moves(&self, red: bool) -> impl Iterator<Item = Move> {
         let mut copy = self.clone();
 
-        self.iter_basic_moves(red).filter(|&mv: &Move| {
-            let piece = copy[mv.from];
-            let capture = copy[mv.to];
-            copy[mv.from] = None;
-            copy[mv.to] = piece;
-
-            let king = self.pieces.iter().position(|piece| *piece == Some(Piece::from_kind(PieceKind::King, red)));
-            let king = Location::from_index(king.unwrap());
-            let mut legal = true;
-
-            copy.iter_basic_moves(!red);
-
-            copy[mv.from] = piece;
-            copy[mv.to] = capture;
-            true
+        self.iter_basic_moves(red).filter(move |mv| {
+            let (_, capture) = copy.play(*mv);
+            let Some(king) = copy.find_king(red) else {
+                copy.undo(*mv, capture);
+                return false;
+            };
+            let legal = copy.iter_basic_moves(!red).filter(|mv| mv.to == king).next();
+            copy.undo(*mv, capture);
+            legal.is_none()
         })
     }
 
-    pub fn iter_basic_moves(&self, red: bool) -> impl Iterator {
+    pub fn iter_basic_moves(&self, red: bool) -> impl Iterator<Item = Move> {
         let mut moves = vec![];
         for y in 0..Self::HEIGHT {
             for x in 0..Self::WIDTH {
@@ -84,12 +130,13 @@ impl Board {
                 }
 
                 let mut add = |to: Option<Location>| {
-                    let Some(to) = to else { return false };
-                    if self[to].is_some_and(|piece| piece.is_red() == red) {
-                        return false;
+                    let Some(to) = to else { return };
+                    if let Some(piece) = self[to]
+                        && piece.is_red() == red
+                    {
+                        return;
                     }
                     moves.push(Move { from, to });
-                    true
                 };
 
                 match piece.kind() {
@@ -110,7 +157,8 @@ impl Board {
                             let Some(to) = current.shift_y(1) else { break };
                             current = to;
 
-                            let Some(piece) = self[to.normalize(red)] else { continue };
+                            let to = to.normalize(red);
+                            let Some(piece) = self[to] else { continue };
                             if piece.kind() == PieceKind::King && piece.is_red() != red {
                                 moves.push(Move { from, to });
                             }
@@ -171,8 +219,13 @@ impl Board {
                     PieceKind::Chariot => {
                         let mut add = |shift: fn(Location) -> Option<Location>| {
                             let mut current = shift(from);
-                            while add(current) {
-                                current = shift(current.unwrap());
+
+                            while let Some(to) = current {
+                                add(current);
+                                if self.is_occupied(to) {
+                                    break;
+                                }
+                                current = shift(to);
                             }
                         };
                         add(|to| to.shift_x(1));
@@ -196,10 +249,10 @@ impl Board {
                             loop {
                                 let Some(to) = current else { return };
 
-                                if let Some(piece) = self[to]
-                                    && piece.is_red() != red
-                                {
-                                    moves.push(Move { from, to });
+                                if let Some(piece) = self[to] {
+                                    if piece.is_red() != red {
+                                        moves.push(Move { from, to });
+                                    }
                                     break;
                                 }
 
@@ -260,5 +313,165 @@ impl std::fmt::Display for Board {
             write!(f, "  {char}")?;
         }
         writeln!(f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node_count(fen: &str, depth: u32) -> usize {
+        fn count_impl(board: &mut Board, red: bool, depth: u32) -> usize {
+            match depth {
+                0 => 0,
+                1 => board.iter_legal_moves(red).count(),
+                _ => board
+                    .iter_legal_moves(red)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|mv| {
+                        let (_, capture) = board.play(mv);
+                        let result = count_impl(board, !red, depth - 1);
+                        board.undo(mv, capture);
+                        result
+                    })
+                    .sum(),
+            }
+        }
+
+        count_impl(&mut Board::from_fen(&mut fen.chars()).unwrap(), true, depth)
+    }
+
+    fn node_count2(fen: &str, depth: u32) -> usize {
+        let mut board = Board::from_fen(&mut fen.chars()).unwrap();
+        let mut play_stack: Vec<Move> = board.iter_legal_moves(true).collect();
+        let mut undo_stack: Vec<(usize, Move, Option<Piece>)> = vec![];
+
+        if depth == 1 {
+            return play_stack.len();
+        }
+
+        let mut result = 0;
+
+        while let Some(mv) = play_stack.pop() {
+            while let Some(&(index, mv, capture)) = undo_stack.last()
+                && index == play_stack.len() + 1
+            {
+                undo_stack.pop();
+                board.undo(mv, capture);
+            }
+
+            let (_, capture) = board.play(mv);
+            undo_stack.push((play_stack.len(), mv, capture));
+
+            let height = undo_stack.len() as u32;
+            let red = height.is_multiple_of(2);
+            let moves = board.iter_legal_moves(red);
+
+            if depth == height + 1 {
+                result += moves.count();
+            } else {
+                play_stack.extend(moves);
+            }
+        }
+
+        result
+    }
+
+    fn assert_count(fen: &str, counts: &[usize]) {
+        for (depth, &expected) in counts.iter().enumerate() {
+            let depth = (depth + 1) as u32;
+            assert_eq!(expected, node_count2(fen, depth), "depth: {depth}");
+        }
+    }
+
+    // perft numbers from https://www.chessprogramming.org/Chinese_Chess_Perft_Results
+
+    #[test]
+    fn perft_opening() {
+        assert_count(
+            "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR",
+            &[44, 1920, 79666, 3290240, 133312995],
+        );
+    }
+
+    #[test]
+    fn perft_position2() {
+        assert_count(
+            "r1ea1a3/4kh3/2h1e4/pHp1p1p1p/4c4/6P2/P1P2R2P/1CcC5/9/2EAKAE2",
+            &[38, 1128, 43929, 1339047, 53112976],
+        );
+    }
+
+    #[test]
+    fn perft_position3() {
+        assert_count(
+            "1ceak4/9/h2a5/2p1p3p/5cp2/2h2H3/6PCP/3AE4/2C6/3A1K1H1",
+            &[7, 281, 8620, 326201, 10369923],
+        );
+    }
+
+    #[test]
+    fn perft_position4() {
+        assert_count(
+            "5a3/3k5/3aR4/9/5r3/5h3/9/3A1A3/5K3/2EC2E2",
+            &[25, 424, 9850, 202884, 4739553, 100055401],
+        );
+    }
+
+    #[test]
+    fn perft_position5() {
+        assert_count(
+            "CRH1k1e2/3ca4/4ea3/9/2hr5/9/9/4E4/4A4/4KA3",
+            &[28, 516, 14808, 395483, 11842230, 367168327],
+        );
+    }
+
+    #[test]
+    fn perft_position6() {
+        assert_count(
+            "R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3",
+            &[21, 364, 7626, 162837, 3500505, 81195154],
+        );
+    }
+
+    #[test]
+    fn perft_position7() {
+        assert_count(
+            "C1hHk4/9/9/9/9/9/h1pp5/E3C4/9/3A1K3",
+            &[28, 222, 6241, 64971, 1914306, 23496493],
+        );
+    }
+
+    #[test]
+    fn perft_position8() {
+        assert_count(
+            "4ka3/4a4/9/9/4H4/p8/9/4C3c/7h1/2EK5",
+            &[23, 345, 8124, 149272, 3513104, 71287903],
+        );
+    }
+
+    #[test]
+    fn perft_position9() {
+        assert_count(
+            "2e1ka3/9/e3H4/4h4/9/9/9/4C4/2p6/2EK5",
+            &[21, 195, 3883, 48060, 933096, 12250386],
+        );
+    }
+
+    #[test]
+    fn perft_position10() {
+        assert_count(
+            "1C2ka3/9/C1Hae1h2/p3p3p/6p2/9/P3P3P/3AE4/3p2c2/c1EAK4",
+            &[30, 830, 22787, 649866, 17920736, 517687990],
+        );
+    }
+
+    #[test]
+    fn perft_position11() {
+        assert_count(
+            "ChH1k1e2/c3a4/4ea3/9/2hr5/9/9/4C4/4A4/4KA3",
+            &[19, 583, 11714, 376467, 8148177, 270587571],
+        );
     }
 }

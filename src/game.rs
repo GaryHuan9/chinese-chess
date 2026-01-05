@@ -7,16 +7,24 @@ use std::str::Chars;
 pub struct Game {
     board: Board,
     red_turn: bool,
-    moves: Vec<(Move, Option<Piece>)>,
+    history: Vec<(Move, Option<Piece>)>,
 }
 
 impl Game {
     pub fn new() -> Self {
-        Self { board: Board::new(), red_turn: true, moves: Vec::new() }
+        Self {
+            board: Board::new(),
+            red_turn: true,
+            history: Vec::new(),
+        }
     }
 
     pub fn opening() -> Self {
-        Self { board: Board::opening(), red_turn: true, moves: Vec::new() }
+        Self {
+            board: Board::opening(),
+            red_turn: true,
+            history: Vec::new(),
+        }
     }
 
     pub fn from_fen(fen: &mut Chars<'_>) -> Option<Self> {
@@ -28,58 +36,56 @@ impl Game {
             _ => return None,
         };
 
-        Some(Self { board, red_turn, moves: Vec::new() })
+        Some(Self {
+            board,
+            red_turn,
+            history: Vec::new(),
+        })
     }
 
     pub fn play(&mut self, mv: Move) {
-        let piece = self.board[mv.from].unwrap();
-        let capture = self.board[mv.to];
-
+        let (piece, capture) = self.board.play(mv);
         assert_eq!(self.red_turn, piece.is_red());
 
         if let Some(capture) = capture {
             assert_ne!(self.red_turn, capture.is_red());
         }
 
-        self.board[mv.from] = None;
-        self.board[mv.to] = Some(piece);
         self.red_turn = !self.red_turn;
-        self.moves.push((mv, capture));
+        self.history.push((mv, capture));
     }
 
     pub fn undo(&mut self) -> Option<Move> {
-        let (mv, capture) = self.moves.pop()?;
-        let piece = self.board[mv.to].unwrap();
+        let (mv, capture) = self.history.pop()?;
         self.red_turn = !self.red_turn;
-
-        assert!(self.board[mv.from].is_none());
-        self.board[mv.from] = Some(piece);
-        self.board[mv.to] = capture;
+        self.board.undo(mv, capture);
 
         Some(mv)
     }
 
     pub fn fill_moves(&self, moves: &mut Vec<Move>) {
-        self.board.fill_moves(moves, self.red_turn);
+        moves.extend(self.board.iter_legal_moves(self.red_turn));
     }
 }
 
 impl std::fmt::Display for Game {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.board.fen())?;
         write!(f, "{}", self.board)?;
 
-        let mut captured = self.moves.iter().filter_map(|&(_, capture)| capture).peekable();
-        if captured.peek().is_some() {
-            write!(f, "captured: ")?;
-            for piece in captured {
-                write!(f, "{} ", piece)?;
-            }
-            writeln!(f)?;
+        let captured = self.history.iter();
+        let captured = captured
+            .filter_map(|&(_, capture)| capture)
+            .map(|piece| piece.to_string())
+            .collect::<Vec<_>>();
+
+        if !captured.is_empty() {
+            writeln!(f, "{}", captured.join(" "))?;
         }
 
-        if let Some((mv, _)) = self.moves.last() {
+        if let Some((mv, _)) = self.history.last() {
             let piece = self.board[mv.to].unwrap();
-            writeln!(f, "moved: {piece} {}{}", mv.from, mv.to)?;
+            write!(f, "{piece} {}{} - ", mv.from, mv.to)?;
         }
 
         let red = if self.red_turn { "red" } else { "black" };

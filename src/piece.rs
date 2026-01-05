@@ -19,7 +19,7 @@ pub struct Piece {
 }
 
 impl Piece {
-    pub fn from_char(value: char) -> Option<Self> {
+    pub fn from_fen_char(value: char) -> Option<Self> {
         let kind = match value.to_ascii_lowercase() {
             'k' => PieceKind::King,
             'a' => PieceKind::Advisor,
@@ -37,7 +37,8 @@ impl Piece {
 
     pub fn from_kind(kind: PieceKind, red: bool) -> Self {
         let data = NonZeroI8::new(kind as i8 + 1).unwrap();
-        Self { data: if red { data } else { -data } }
+        let data = if red { data } else { -data };
+        Self { data }
     }
 
     pub fn is_red(&self) -> bool {
@@ -47,6 +48,23 @@ impl Piece {
     pub fn kind(&self) -> PieceKind {
         let data = self.data.abs().get() - 1;
         unsafe { std::mem::transmute(data) }
+    }
+
+    pub fn fen_char(&self) -> char {
+        let result = match self.kind() {
+            PieceKind::King => 'k',
+            PieceKind::Advisor => 'a',
+            PieceKind::Elephant => 'e',
+            PieceKind::Horse => 'h',
+            PieceKind::Chariot => 'r',
+            PieceKind::Cannon => 'c',
+            PieceKind::Pawn => 'p',
+        };
+        if self.is_red() {
+            result.to_ascii_uppercase()
+        } else {
+            result
+        }
     }
 }
 
@@ -68,6 +86,10 @@ impl std::fmt::Display for Piece {
             (false, PieceKind::Cannon) => '砲',
             (false, PieceKind::Pawn) => '卒',
         };
-        if self.is_red() { write!(f, "\x1B[31m{}\x1b[0m", char) } else { write!(f, "{}", char) }
+        if self.is_red() {
+            write!(f, "\x1B[31m{}\x1b[0m", char)
+        } else {
+            write!(f, "{}", char)
+        }
     }
 }

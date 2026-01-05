@@ -71,7 +71,14 @@ impl Location {
     }
 
     pub fn normalize(&self, red: bool) -> Self {
-        if red { *self } else { Self { x: self.x, y: Board::HEIGHT - self.y - 1 } }
+        if red {
+            *self
+        } else {
+            Self {
+                x: self.x,
+                y: Board::HEIGHT - self.y - 1,
+            }
+        }
     }
 }
 impl std::fmt::Display for Location {
