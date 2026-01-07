@@ -1,5 +1,5 @@
 use crate::board::Board;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -76,38 +76,52 @@ impl Location {
     }
 }
 
-impl std::fmt::Display for Location {
+impl Display for Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", (b'a' + self.x as u8) as char, self.y)
     }
 }
 
 impl FromStr for Location {
-    type Err = ();
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut chars = s.chars();
-        let Some(x) = chars.next() else { return Err(()) };
-        let Some(y) = chars.next() else { return Err(()) };
-        let None = chars.next() else { return Err(()) };
+        let (x, y) = chars.next().zip(chars.next()).ok_or(ParseError)?;
 
-        let x = x.to_ascii_lowercase();
-        let x = (x as u8).wrapping_sub(b'a') as i8;
-        let y = (y as u8).wrapping_sub(b'0') as i8;
-        Location::from_xy(x, y).ok_or(())
+        Location::from_xy(
+            (x.to_ascii_lowercase() as u8).wrapping_sub(b'a') as i8,
+            (y as u8).wrapping_sub(b'0') as i8,
+        )
+        .ok_or(ParseError)
+    }
+}
+
+impl Display for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.from, self.to)
     }
 }
 
 impl FromStr for Move {
-    type Err = ();
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((from, to)) = s.split_at_checked(2) else {
-            return Err(());
-        };
+        let (from, to) = s.split_at_checked(2).ok_or(ParseError)?;
         Ok(Self {
             from: from.parse::<Location>()?,
             to: to.parse::<Location>()?,
         })
     }
 }
+
+#[derive(Debug)]
+pub struct ParseError;
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "location parse error")
+    }
+}
+
+impl std::error::Error for ParseError {}

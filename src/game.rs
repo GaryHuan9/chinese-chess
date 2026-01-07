@@ -58,8 +58,8 @@ impl Game {
         Some(mv)
     }
 
-    pub fn fill_moves(&self, moves: &mut Vec<Move>) {
-        moves.extend(self.board.iter_legal_moves(self.red_turn));
+    pub fn moves(&self) -> Vec<Move> {
+        self.board.iter_legal_moves(self.red_turn).collect()
     }
 }
 
@@ -75,16 +75,16 @@ impl std::fmt::Display for Game {
             .collect::<Vec<_>>();
 
         if !captured.is_empty() {
-            writeln!(f, "{}", captured.join(" "))?;
+            writeln!(f, "captured - {}", captured.join(" "))?;
         }
 
         if let Some((mv, _)) = self.history.last() {
             let piece = self.board[mv.to].unwrap();
-            write!(f, "{piece} {}{} - ", mv.from, mv.to)?;
+            write!(f, "{} {piece} - ", mv)?;
         }
 
         let red = if self.red_turn { "red" } else { "black" };
         let king = Piece::from_kind(PieceKind::King, self.red_turn);
-        writeln!(f, "{} {} to move", red, king)
+        writeln!(f, "{} {} to play", red, king)
     }
 }

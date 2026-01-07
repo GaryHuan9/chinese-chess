@@ -1,12 +1,12 @@
 ### Client
 
-login <version> <name>
+init <version> <name>
 ready
-move <move>
+play <move>
 
 ### Server
 
-game <fen> <red>
-move <time>
-move <time> <move>
+game <fen> <red_turn>
+prompt <time>
+play <move>
 end
