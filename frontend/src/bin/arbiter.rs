@@ -54,13 +54,13 @@ fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>
         let mut game = Game::opening();
         writer.next("game", &format!("{} {}", game.fen(), true))?;
 
-        loop {
+        'game: loop {
             let moves = game.moves();
 
             if moves.is_empty() {
                 writer.next("end", "")?;
                 println!("black won");
-                break;
+                break 'game;
             }
 
             let mv = loop {
@@ -80,15 +80,15 @@ fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>
             };
 
             game.play(mv);
-            println!("{game}");
             writer.next("play", &mv.to_string())?;
+            print!("{game}");
 
-            let moves = game.moves();
+            let mut moves = game.moves();
 
             if moves.is_empty() {
                 writer.next("end", "")?;
                 println!("red won");
-                break;
+                break 'game;
             }
 
             let mv = loop {
@@ -97,26 +97,29 @@ fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>
                 let input = input.trim().to_ascii_lowercase();
 
                 if let Ok(mv) = input.parse::<Move>() {
-                    if !moves.contains(&mv) {
-                        println!("illegal move");
-                        continue;
+                    if moves.contains(&mv) {
+                        break mv;
                     }
-
-                    break mv;
+                    println!("illegal move");
                 } else if input == "undo" {
-                    // game.undo();
-                    // game.undo();
-                    //
-                    // todo_fmt(format_args!("game {} {}\n", game.fen(), true))?;
+                    game.undo();
+                    game.undo();
 
-                    todo!();
+                    writer.next("end", "")?;
+                    while reader.next().ok_or("end of connection")?.0 != "ready" {}
+                    writer.next("game", &format!("{} {}", game.fen(), true))?;
+                    print!("{game}");
+
+                    moves = game.moves();
+                } else if input == "new" {
+                    writer.next("end", "")?;
+                    break 'game;
                 } else {
                     println!("unknown input");
                 }
             };
 
             game.play(mv);
-            println!("{game}");
             writer.next("play", &mv.to_string())?;
         }
     }
