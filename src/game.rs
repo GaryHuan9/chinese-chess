@@ -61,6 +61,31 @@ impl Game {
     pub fn moves(&self) -> Vec<Move> {
         self.board.iter_legal_moves(self.red_turn).collect()
     }
+
+    pub fn moves_ranked(&self) -> Vec<(Move, i32)> {
+        let mut board = self.board.clone();
+
+        // fn search(board: &mut Board, red: bool, depth: i32) -> i32 {
+        //     board.iter_legal_moves(red)
+        //         .map(|mv| {
+        //             let (_, capture) = board.play(mv);
+        //             let value = board.evaluate(self.red_turn);
+        //             board.undo(mv, capture);
+        //             (mv, value)
+        //         }).fold(i32::MIN, )
+        //
+        // }
+
+        self.board
+            .iter_legal_moves(self.red_turn)
+            .map(|mv| {
+                let (_, capture) = board.play(mv);
+                let value = board.evaluate(self.red_turn);
+                board.undo(mv, capture);
+                (mv, value)
+            })
+            .collect()
+    }
 }
 
 impl std::fmt::Display for Game {
@@ -72,6 +97,7 @@ impl std::fmt::Display for Game {
         let captured = captured
             .filter_map(|&(_, capture)| capture)
             .map(|piece| piece.to_string())
+            .rev()
             .collect::<Vec<_>>();
 
         if !captured.is_empty() {

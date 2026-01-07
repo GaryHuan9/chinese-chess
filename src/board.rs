@@ -99,6 +99,10 @@ impl Board {
         Location::from_index(self.pieces.iter().position(predicate)?)
     }
 
+    pub fn evaluate(&self, red: bool) -> i32 {
+        self.pieces.iter().filter_map(|&p| p).map(|p| p.base_value(red)).sum()
+    }
+
     pub fn iter_legal_moves(&self, red: bool) -> impl Iterator<Item = Move> {
         let mut copy = self.clone();
 

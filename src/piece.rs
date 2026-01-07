@@ -1,4 +1,4 @@
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::num::NonZeroI8;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -66,11 +66,9 @@ impl Piece {
             result
         }
     }
-}
 
-impl std::fmt::Display for Piece {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let char = match (self.is_red(), self.kind()) {
+    pub fn chinese_char(&self) -> char {
+        match (self.is_red(), self.kind()) {
             (true, PieceKind::King) => '帥',
             (true, PieceKind::Advisor) => '仕',
             (true, PieceKind::Elephant) => '相',
@@ -85,11 +83,39 @@ impl std::fmt::Display for Piece {
             (false, PieceKind::Chariot) => '車',
             (false, PieceKind::Cannon) => '砲',
             (false, PieceKind::Pawn) => '卒',
+        }
+    }
+
+    pub fn base_value(&self, red: bool) -> i32 {
+        let value = match self.kind() {
+            PieceKind::King => 1000000,
+            PieceKind::Advisor => 2000,
+            PieceKind::Elephant => 2000,
+            PieceKind::Horse => 4000,
+            PieceKind::Chariot => 9000,
+            PieceKind::Cannon => 4500,
+            PieceKind::Pawn => 1500,
+        };
+        if self.is_red() == red { value } else { -value }
+    }
+
+    pub fn display(&self, chinese: bool) -> impl Display {
+        let s = if chinese {
+            self.chinese_char().to_string()
+        } else {
+            let c = self.fen_char();
+            format!("{c}{c}")
         };
         if self.is_red() {
-            write!(f, "\x1B[31m{}\x1b[0m", char)
+            format!("\x1B[31m{}\x1b[0m", s)
         } else {
-            write!(f, "{}", char)
+            s
         }
+    }
+}
+
+impl Display for Piece {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display(true))
     }
 }

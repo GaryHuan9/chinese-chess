@@ -1,6 +1,7 @@
 ### Client
 
-init <version> <name>
+init <version>
+info <name>
 ready
 play <move>
 

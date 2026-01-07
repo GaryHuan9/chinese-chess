@@ -12,6 +12,12 @@ struct Arguments {
 
     #[clap(short, long, default_value_t = 5000)]
     port: u16,
+
+    #[clap(short, long, default_value = "robot")]
+    name: String,
+
+    #[clap(short, long, default_value_t = true)]
+    random: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -23,7 +29,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut random = rand::rng();
 
-    writer.next("init", "1 robot")?;
+    writer.next("init", "1")?;
+    writer.next("info", &arguments.name)?;
 
     loop {
         writer.next("ready", "")?;
@@ -47,13 +54,25 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             match message {
                 "prompt" => {
-                    let moves = game.moves();
+                    print!("{game}");
+
+                    let mut moves = game.moves_ranked();
                     if moves.is_empty() {
                         break;
                     }
 
-                    let index = random.random_range(0..moves.len());
-                    let mv = moves[index];
+                    let mv = if arguments.random {
+                        moves[random.random_range(0..moves.len())].0
+                    } else {
+                        moves.sort_by_key(|&(_, v)| -v);
+
+                        for &(mv, value) in &moves {
+                            println!("{} - {}", mv, value);
+                        }
+
+                        moves.first().unwrap().0
+                    };
+
                     writer.next("play", &mv.to_string())?;
                 }
                 "play" => {
