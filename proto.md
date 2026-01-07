@@ -6,7 +6,7 @@ move <move>
 
 ### Server
 
-game <fen>
+game <fen> <red>
 move <time>
 move <time> <move>
-end <result>
+end

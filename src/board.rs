@@ -2,7 +2,6 @@ use crate::location::{Location, Move};
 use crate::piece::{Piece, PieceKind};
 use std::fmt::Formatter;
 use std::ops::{Index, IndexMut};
-use std::str::Chars;
 
 #[derive(Clone)]
 pub struct Board {
@@ -19,12 +18,12 @@ impl Board {
         }
     }
 
-    pub fn from_fen(fen: &mut Chars<'_>) -> Option<Self> {
+    pub fn from_fen(fen: &str) -> Option<Self> {
         let mut board = Self::new();
         let mut y = Location::new().shift_y(Self::HEIGHT - 1).unwrap();
         let mut x = 0;
 
-        for current in fen {
+        for current in fen.chars() {
             match current {
                 ' ' => break,
                 '/' => {
@@ -47,7 +46,7 @@ impl Board {
     }
 
     pub fn opening() -> Self {
-        Self::from_fen(&mut "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR".chars()).unwrap()
+        Self::from_fen("rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR").unwrap()
     }
 
     pub fn fen(&self) -> String {
@@ -92,10 +91,6 @@ impl Board {
         assert!(self[mv.from].is_none());
         self[mv.from] = self[mv.to];
         self[mv.to] = capture;
-    }
-
-    pub fn is_occupied(&self, location: Location) -> bool {
-        self[location].is_some()
     }
 
     pub fn find_king(&self, red: bool) -> Option<Location> {
@@ -182,7 +177,7 @@ impl Board {
                     PieceKind::Elephant => {
                         let mut add = |x, y| {
                             let Some(block) = from.shift_xy(x, y) else { return };
-                            if self.is_occupied(block) {
+                            if self[block].is_some() {
                                 return;
                             };
 
@@ -203,7 +198,7 @@ impl Board {
                             |shift_major: fn(Location) -> Option<Location>,
                              shift_minor: fn(Location, i8) -> Option<Location>| {
                                 let Some(block) = shift_major(from) else { return };
-                                if self.is_occupied(block) {
+                                if self[block].is_some() {
                                     return;
                                 }
 
@@ -222,8 +217,8 @@ impl Board {
 
                             while let Some(to) = current {
                                 add(current);
-                                if self.is_occupied(to) {
-                                    break;
+                                if self[to].is_some() {
+                                    return;
                                 }
                                 current = shift(to);
                             }
@@ -238,7 +233,7 @@ impl Board {
                             let mut current = shift(from);
                             loop {
                                 let Some(to) = current else { return };
-                                if self.is_occupied(to) {
+                                if self[to].is_some() {
                                     break;
                                 }
                                 moves.push(Move { from, to });
@@ -321,29 +316,7 @@ mod tests {
     use super::*;
 
     fn node_count(fen: &str, depth: u32) -> usize {
-        fn count_impl(board: &mut Board, red: bool, depth: u32) -> usize {
-            match depth {
-                0 => 0,
-                1 => board.iter_legal_moves(red).count(),
-                _ => board
-                    .iter_legal_moves(red)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .map(|mv| {
-                        let (_, capture) = board.play(mv);
-                        let result = count_impl(board, !red, depth - 1);
-                        board.undo(mv, capture);
-                        result
-                    })
-                    .sum(),
-            }
-        }
-
-        count_impl(&mut Board::from_fen(&mut fen.chars()).unwrap(), true, depth)
-    }
-
-    fn node_count2(fen: &str, depth: u32) -> usize {
-        let mut board = Board::from_fen(&mut fen.chars()).unwrap();
+        let mut board = Board::from_fen(fen).unwrap();
         let mut play_stack: Vec<Move> = board.iter_legal_moves(true).collect();
         let mut undo_stack: Vec<(usize, Move, Option<Piece>)> = vec![];
 
@@ -381,7 +354,7 @@ mod tests {
     fn assert_count(fen: &str, counts: &[usize]) {
         for (depth, &expected) in counts.iter().enumerate() {
             let depth = (depth + 1) as u32;
-            assert_eq!(expected, node_count2(fen, depth), "depth: {depth}");
+            assert_eq!(expected, node_count(fen, depth), "depth: {depth}");
         }
     }
 

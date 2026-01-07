@@ -2,7 +2,6 @@ use crate::board::Board;
 use crate::location::Move;
 use crate::piece::{Piece, PieceKind};
 use std::fmt::Formatter;
-use std::str::Chars;
 
 pub struct Game {
     board: Board,
@@ -27,20 +26,16 @@ impl Game {
         }
     }
 
-    pub fn from_fen(fen: &mut Chars<'_>) -> Option<Self> {
-        let board = Board::from_fen(fen)?;
-
-        let red_turn = match fen.next()? {
-            'w' => true,
-            'b' => false,
-            _ => return None,
-        };
-
+    pub fn from_fen(fen: &str, red_turn: bool) -> Option<Self> {
         Some(Self {
-            board,
+            board: Board::from_fen(fen)?,
             red_turn,
             history: Vec::new(),
         })
+    }
+
+    pub fn fen(&self) -> String {
+        self.board.fen()
     }
 
     pub fn play(&mut self, mv: Move) {

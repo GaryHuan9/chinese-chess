@@ -1,6 +1,6 @@
 use crate::board::Board;
 use std::fmt::Formatter;
-use std::str::Chars;
+use std::str::FromStr;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Location {
@@ -30,12 +30,6 @@ impl Location {
         let x = index as i8 % Board::WIDTH;
         let y = index as i8 / Board::WIDTH;
         Self::from_xy(x, y)
-    }
-
-    pub fn from_chars(chars: &mut Chars<'_>) -> Option<Self> {
-        let x = chars.next()?.to_ascii_uppercase() as u8;
-        let y = chars.next()? as u8;
-        Self::from_xy(x.wrapping_sub(b'A') as i8, y.wrapping_sub(b'0') as i8)
     }
 
     pub fn shift_x(&self, y: i8) -> Option<Self> {
@@ -81,8 +75,39 @@ impl Location {
         }
     }
 }
+
 impl std::fmt::Display for Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", (b'a' + self.x as u8) as char, self.y)
+    }
+}
+
+impl FromStr for Location {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+        let Some(x) = chars.next() else { return Err(()) };
+        let Some(y) = chars.next() else { return Err(()) };
+        let None = chars.next() else { return Err(()) };
+
+        let x = x.to_ascii_lowercase();
+        let x = (x as u8).wrapping_sub(b'a') as i8;
+        let y = (y as u8).wrapping_sub(b'0') as i8;
+        Location::from_xy(x, y).ok_or(())
+    }
+}
+
+impl FromStr for Move {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let Some((from, to)) = s.split_at_checked(2) else {
+            return Err(());
+        };
+        Ok(Self {
+            from: from.parse::<Location>()?,
+            to: to.parse::<Location>()?,
+        })
     }
 }
