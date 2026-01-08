@@ -1,10 +1,11 @@
 use chinese_chess::game::Game;
 use chinese_chess::location::Move;
 use clap::Parser;
-use frontend::protocol::{ProtocolReader, ProtocolWriter};
+use frontend::line_stream::AsyncLineStream;
+use frontend::protocol::{ArbiterMessage, PlayerMessage, Protocol};
+use smol::LocalExecutor;
 use std::error::Error;
 use std::io;
-use std::net::{TcpListener, TcpStream};
 
 #[derive(Parser, Debug)]
 struct Arguments {
@@ -15,72 +16,64 @@ struct Arguments {
     human: bool,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let arguments = Arguments::parse();
+fn main() {
+    let executor = LocalExecutor::new();
 
-    let address = format!("127.0.0.1:{}", arguments.port);
-    let listener = TcpListener::bind(address)?;
+    smol::block_on(executor.run(async {
+        let arguments = Arguments::parse();
+        let address = format!("127.0.0.1:{}", arguments.port);
+        let listener = smol::net::TcpListener::bind(address).await.unwrap();
 
-    for stream in listener.incoming() {
-        if let Err(error) = handle_connection(stream) {
-            println!("error - client disconnected: {}", error);
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            executor.spawn(handle_connection(stream)).detach();
         }
-    }
-
-    Ok(())
+    }));
 }
 
-fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>> {
-    let stream: &TcpStream = &stream?;
-    let mut reader = ProtocolReader::new(stream);
-    let mut writer = ProtocolWriter::new(stream);
-
-    {
-        let Some(("init", mut parts)) = reader.next() else {
-            return Err("expected init message".into());
-        };
-
-        if parts.next().is_none_or(|v| !v.parse().is_ok_and(|v: i32| v == 1)) {
-            return Err("expected version 1 in init message".into());
-        }
+async fn handle_connection(stream: smol::net::TcpStream) {
+    let stream = AsyncLineStream::new(&stream);
+    if let Err(err) = serve_connection(stream).await {
+        println!("connection ended - {err}")
     }
+}
 
-    let _name = {
-        let Some(("info", mut parts)) = reader.next() else {
-            return Err("expected info message".into());
-        };
+async fn serve_connection(stream: AsyncLineStream) -> Result<(), Box<dyn Error>> {
+    let read = async || Protocol::decode_player(&stream.read_line().await?);
+    let write = |message| stream.write_line(Protocol::encode_arbiter(message));
 
-        let Some(name) = parts.next() else {
-            return Err("expected name in init message".into());
-        };
+    let Some(PlayerMessage::Init { version: 1 }) = read().await else {
+        return Err("expected init message with version 1".into());
+    };
 
-        name.to_string()
+    let Some(PlayerMessage::Info { name: _name }) = read().await else {
+        return Err("expected info message".into());
     };
 
     loop {
-        while reader.next().ok_or("end of connection")?.0 != "ready" {}
-
         let mut game = Game::opening();
-        writer.next("game", &format!("{} {}", game.fen(), true))?;
+
+        write(ArbiterMessage::Game {
+            fen: game.fen(),
+            red_turn: game.red_turn(),
+        })
+        .await?;
+
+        while !matches!(read().await.ok_or("end of connection")?, PlayerMessage::Ready) {}
 
         'game: loop {
             let moves = game.moves();
 
             if moves.is_empty() {
-                writer.next("end", "")?;
                 println!("black won");
                 break 'game;
             }
 
             let mv = loop {
-                writer.next("prompt", "1000")?;
+                write(ArbiterMessage::Prompt { time: 1000 }).await?;
 
-                let Some(("play", mut parts)) = reader.next() else {
+                let Some(PlayerMessage::Play { mv }) = read().await else {
                     return Err("expected play message".into());
-                };
-
-                let Some(mv) = parts.next().and_then(|mv| mv.parse().ok()) else {
-                    return Err("invalid move format".into());
                 };
 
                 if moves.contains(&mv) {
@@ -89,13 +82,12 @@ fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>
             };
 
             game.play(mv);
-            writer.next("play", &mv.to_string())?;
+            write(ArbiterMessage::Update { mv }).await?;
             print!("{game}");
 
             let mut moves = game.moves();
 
             if moves.is_empty() {
-                writer.next("end", "")?;
                 println!("red won");
                 break 'game;
             }
@@ -114,14 +106,17 @@ fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>
                     game.undo();
                     game.undo();
 
-                    writer.next("end", "")?;
-                    while reader.next().ok_or("end of connection")?.0 != "ready" {}
-                    writer.next("game", &format!("{} {}", game.fen(), true))?;
+                    write(ArbiterMessage::Game {
+                        fen: game.fen(),
+                        red_turn: game.red_turn(),
+                    })
+                    .await?;
+
+                    while !matches!(read().await.ok_or("end of connection")?, PlayerMessage::Ready) {}
                     print!("{game}");
 
                     moves = game.moves();
                 } else if input == "new" {
-                    writer.next("end", "")?;
                     break 'game;
                 } else {
                     println!("unknown input");
@@ -129,7 +124,7 @@ fn handle_connection(stream: io::Result<TcpStream>) -> Result<(), Box<dyn Error>
             };
 
             game.play(mv);
-            writer.next("play", &mv.to_string())?;
+            write(ArbiterMessage::Update { mv }).await?;
         }
     }
 }

@@ -38,6 +38,10 @@ impl Game {
         self.board.fen()
     }
 
+    pub fn red_turn(&self) -> bool {
+        self.red_turn
+    }
+
     pub fn play(&mut self, mv: Move) {
         let (piece, capture) = self.board.play(mv);
         assert_eq!(self.red_turn, piece.is_red());
