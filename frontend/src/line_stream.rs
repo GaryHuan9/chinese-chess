@@ -1,4 +1,4 @@
-use smol::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
+use smol::io::{AsyncReadExt, AsyncWriteExt};
 use smol::net::TcpStream as AsyncTcpStream;
 use std::cell::RefCell;
 use std::io::BufRead;
@@ -41,35 +41,38 @@ impl<'a> LineStream<'a> {
 }
 
 pub struct AsyncLineStream {
-    inner: RefCell<AsyncTcpStream>,
-    reader: RefCell<AsyncBufReader<AsyncTcpStream>>,
+    inner: AsyncTcpStream,
 }
 
 impl AsyncLineStream {
-    pub fn new(inner: &AsyncTcpStream) -> Self {
-        Self {
-            inner: RefCell::new(inner.clone()),
-            reader: RefCell::new(AsyncBufReader::new(inner.clone())),
-        }
+    pub fn new(inner: AsyncTcpStream) -> Self {
+        Self { inner }
     }
 
     pub async fn read_line(&self) -> Option<String> {
-        let mut line = String::new();
-        loop {
-            if let Err(_) | Ok(0) = self.reader.borrow_mut().read_line(&mut line).await {
-                return None;
-            }
+        let mut inner = self.inner.clone();
 
-            let result = line.trim();
-            if !result.is_empty() {
-                return Some(result.to_string());
-            }
-            line.clear();
-        }
+        let mut buf = [0u8; 1];
+        inner.read(&mut buf).await.ok();
+        None
+
+        // let mut line = String::new();
+        // loop {
+        //     if let Err(_) | Ok(0) = self.inner.read_line(&mut line).await {
+        //         return None;
+        //     }
+        //
+        //     let result = line.trim();
+        //     if !result.is_empty() {
+        //         return Some(result.to_string());
+        //     }
+        //     line.clear();
+        // }
     }
 
     pub async fn write_line(&self, mut line: String) -> Result<(), std::io::Error> {
         line.push('\n');
-        self.inner.borrow_mut().write(line.as_bytes()).await.map(|_| ())
+        let mut inner = self.inner.clone();
+        inner.write(line.as_bytes()).await.map(|_| ())
     }
 }

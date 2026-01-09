@@ -1,3 +1,4 @@
+use chinese_chess::game::Game;
 use chinese_chess::location::Move;
 pub enum ArbiterMessage {
     Game { fen: String, red_turn: bool },
@@ -10,6 +11,13 @@ pub enum PlayerMessage {
     Info { name: String },
     Ready,
     Play { mv: Move },
+}
+
+impl ArbiterMessage {
+    pub fn from_game(game: &Game) -> ArbiterMessage {
+        let (fen, red_turn) = game.fen();
+        Self::Game { fen, red_turn }
+    }
 }
 
 pub struct Protocol;
@@ -56,7 +64,7 @@ impl Protocol {
         Some(message)
     }
 
-    pub fn encode_arbiter(message: ArbiterMessage) -> String {
+    pub fn encode_arbiter(message: &ArbiterMessage) -> String {
         match message {
             ArbiterMessage::Game { fen, red_turn } => format!("game {fen} {red_turn}"),
             ArbiterMessage::Prompt { time } => format!("prompt {time}"),
@@ -64,7 +72,7 @@ impl Protocol {
         }
     }
 
-    pub fn encode_player(message: PlayerMessage) -> String {
+    pub fn encode_player(message: &PlayerMessage) -> String {
         match message {
             PlayerMessage::Init { version } => format!("init {version}"),
             PlayerMessage::Info { name } => format!("info {name}"),

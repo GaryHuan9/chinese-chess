@@ -7,42 +7,44 @@ pub struct Game {
     board: Board,
     red_turn: bool,
     history: Vec<(Move, Option<Piece>)>,
+    moves: Vec<Move>,
+}
+
+pub enum Outcome {
+    RedWon,
+    BlackWon,
+    Stalemate, // draw from no legal move and no check
+    MoveRule,  // draw from the 50-move rule
 }
 
 impl Game {
-    pub fn new() -> Self {
+    pub fn new(board: Board, red_turn: bool) -> Self {
+        let moves = board.iter_legal_moves(red_turn).collect();
         Self {
-            board: Board::new(),
-            red_turn: true,
+            board,
+            red_turn,
             history: Vec::new(),
+            moves,
         }
     }
 
     pub fn opening() -> Self {
-        Self {
-            board: Board::opening(),
-            red_turn: true,
-            history: Vec::new(),
-        }
+        Self::new(Board::opening(), true)
     }
 
     pub fn from_fen(fen: &str, red_turn: bool) -> Option<Self> {
-        Some(Self {
-            board: Board::from_fen(fen)?,
-            red_turn,
-            history: Vec::new(),
-        })
+        Some(Self::new(Board::from_fen(fen)?, red_turn))
     }
 
-    pub fn fen(&self) -> String {
-        self.board.fen()
+    pub fn fen(&self) -> (String, bool) {
+        (self.board.fen(), self.red_turn)
     }
 
-    pub fn red_turn(&self) -> bool {
-        self.red_turn
-    }
+    pub fn play(&mut self, mv: Move) -> bool {
+        if self.outcome().is_some() || !self.moves.contains(&mv) {
+            return false;
+        }
 
-    pub fn play(&mut self, mv: Move) {
         let (piece, capture) = self.board.play(mv);
         assert_eq!(self.red_turn, piece.is_red());
 
@@ -52,6 +54,9 @@ impl Game {
 
         self.red_turn = !self.red_turn;
         self.history.push((mv, capture));
+
+        self.moves = self.board.iter_legal_moves(self.red_turn).collect();
+        true
     }
 
     pub fn undo(&mut self) -> Option<Move> {
@@ -59,11 +64,13 @@ impl Game {
         self.red_turn = !self.red_turn;
         self.board.undo(mv, capture);
 
+        self.moves = self.board.iter_legal_moves(self.red_turn).collect();
+
         Some(mv)
     }
 
-    pub fn moves(&self) -> Vec<Move> {
-        self.board.iter_legal_moves(self.red_turn).collect()
+    pub fn moves(&self) -> &Vec<Move> {
+        &self.moves
     }
 
     pub fn moves_ranked(&self) -> Vec<(Move, i32)> {
@@ -80,15 +87,43 @@ impl Game {
         //
         // }
 
-        self.board
-            .iter_legal_moves(self.red_turn)
-            .map(|mv| {
+        self.moves
+            .iter()
+            .map(|&mv| {
                 let (_, capture) = board.play(mv);
                 let value = board.evaluate(self.red_turn);
                 board.undo(mv, capture);
                 (mv, value)
             })
             .collect()
+    }
+
+    pub fn outcome(&self) -> Option<Outcome> {
+        if self.move_rule() {
+            return Some(Outcome::MoveRule);
+        }
+
+        if !self.moves.is_empty() {
+            return None;
+        }
+
+        let king = self.board.find_king(self.red_turn).unwrap();
+        let check = self.board.iter_legal_moves(!self.red_turn).any(|mv| mv.to == king);
+
+        match (check, self.red_turn) {
+            (false, _) => Some(Outcome::Stalemate),
+            (true, true) => Some(Outcome::BlackWon),
+            (true, false) => Some(Outcome::RedWon),
+        }
+    }
+
+    pub fn move_rule(&self) -> bool {
+        self.history
+            .iter()
+            .rev()
+            .take(50)
+            // unwrap on mv.to should not panic since there was no capture
+            .all(|(mv, capture)| capture.is_none() && self.board[mv.to].unwrap().kind() != PieceKind::Pawn)
     }
 }
 
@@ -115,6 +150,6 @@ impl std::fmt::Display for Game {
 
         let red = if self.red_turn { "red" } else { "black" };
         let king = Piece::from_kind(PieceKind::King, self.red_turn);
-        writeln!(f, "{} {} to play", red, king)
+        writeln!(f, "{} {} to play - {} moves available", red, king, self.moves.len())
     }
 }

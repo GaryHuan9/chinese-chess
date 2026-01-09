@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let stream = LineStream::new(&stream);
 
     let read = || Protocol::decode_arbiter(&stream.read_line()?);
-    let write = |message| stream.write_line(Protocol::encode_player(message));
+    let write = |message| stream.write_line(Protocol::encode_player(&message));
 
     let mut random = rand::rng();
 
@@ -46,8 +46,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 write(PlayerMessage::Ready)?;
             }
             ArbiterMessage::Prompt { time: _time } => {
-                print!("{}", game.as_ref().unwrap());
-                let mut moves = game.as_ref().unwrap().moves_ranked();
+                let mut moves = {
+                    let game = game.as_mut().unwrap();
+                    print!("{game}");
+                    game.moves_ranked()
+                };
 
                 if moves.is_empty() {
                     game = None;
@@ -69,7 +72,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 write(PlayerMessage::Play { mv })?;
             }
             ArbiterMessage::Update { mv } => {
-                game.as_mut().unwrap().play(mv);
+                let played = game.as_mut().unwrap().play(mv);
+                assert!(played);
             }
         }
     }
