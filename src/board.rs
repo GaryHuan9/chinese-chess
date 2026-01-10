@@ -1,6 +1,7 @@
+use crate::display_format::DisplayFormat;
 use crate::location::{Location, Move};
 use crate::piece::{Piece, PieceKind};
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::ops::{Index, IndexMut};
 
 #[derive(Clone)]
@@ -65,7 +66,7 @@ impl Board {
                 let Some(piece) = self[location] else { continue };
 
                 result.push_str(&spaces(last_piece, x));
-                result.push(piece.fen_char());
+                result.push(piece.fen());
                 last_piece = x + 1
             }
 
@@ -278,6 +279,41 @@ impl Board {
         }
         moves.into_iter()
     }
+
+    pub fn display(&self, format: DisplayFormat) -> impl Display {
+        struct Impl<'a>(&'a Board, DisplayFormat);
+        return Impl(self, format);
+
+        impl Display for Impl<'_> {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                let &Self(board, format) = self;
+                write!(f, "{}", board.fen())?;
+
+                if format.concise {
+                    return Ok(());
+                }
+
+                writeln!(f)?;
+
+                for y in (0..Board::HEIGHT).rev() {
+                    write!(f, "{y}")?;
+                    for x in 0..Board::WIDTH {
+                        if let Some(piece) = board[Location::from_xy(x, y).unwrap()] {
+                            write!(f, " {}", piece.display(format.with_concise(true)))?;
+                        } else {
+                            write!(f, "   ")?;
+                        }
+                    }
+                    writeln!(f)?;
+                }
+
+                for char in 'A'..='I' {
+                    write!(f, "  {char}")?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 impl Index<Location> for Board {
@@ -293,23 +329,9 @@ impl IndexMut<Location> for Board {
     }
 }
 
-impl std::fmt::Display for Board {
+impl Display for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for y in (0..Self::HEIGHT).rev() {
-            write!(f, "{y} ")?;
-            for x in 0..Self::WIDTH {
-                if let Some(piece) = self[Location::from_xy(x, y).unwrap()] {
-                    write!(f, "{} ", piece)?;
-                } else {
-                    write!(f, "   ")?;
-                }
-            }
-            writeln!(f)?;
-        }
-        for char in 'A'..='I' {
-            write!(f, "  {char}")?;
-        }
-        writeln!(f)
+        write!(f, "{}", self.display(DisplayFormat::string()))
     }
 }
 

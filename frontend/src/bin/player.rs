@@ -1,3 +1,4 @@
+use chinese_chess::display_format::DisplayFormat;
 use chinese_chess::game::Game;
 use clap::Parser;
 use frontend::line_stream::LineStream;
@@ -48,7 +49,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             ArbiterMessage::Prompt { time: _time } => {
                 let mut moves = {
                     let game = game.as_mut().unwrap();
-                    print!("{game}");
+                    println!("{}", game.display(DisplayFormat::pretty()));
                     game.moves_ranked()
                 };
 
