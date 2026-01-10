@@ -8,3 +8,5 @@ chinese-chess = { path = ".." }
 rand = "0.9.2"
 clap = { version = "4.5.54", features = ["derive"] }
 smol = { version = "2.0.2" }
+log = "0.4.29"
+env_logger = "0.11.8"

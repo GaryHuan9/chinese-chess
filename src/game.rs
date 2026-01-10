@@ -10,6 +10,7 @@ pub struct Game {
     moves: Vec<Move>,
 }
 
+#[derive(Debug)]
 pub enum Outcome {
     RedWon,
     BlackWon,
@@ -118,12 +119,15 @@ impl Game {
     }
 
     pub fn move_rule(&self) -> bool {
-        self.history
-            .iter()
-            .rev()
-            .take(50)
-            // unwrap on mv.to should not panic since there was no capture
-            .all(|(mv, capture)| capture.is_none() && self.board[mv.to].unwrap().kind() != PieceKind::Pawn)
+        const LENGTH: usize = 50;
+        if self.history.len() < LENGTH {
+            return false;
+        }
+
+        self.history.iter().rev().take(LENGTH).all(|(mv, capture)| {
+            // no capture made or no pawn movement
+            capture.is_none() && self.board[mv.to].map(|p| p.kind() != PieceKind::Pawn).unwrap_or(true)
+        })
     }
 }
 

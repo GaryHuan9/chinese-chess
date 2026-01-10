@@ -45,29 +45,39 @@ pub struct AsyncLineStream {
 }
 
 impl AsyncLineStream {
+    pub const MAX_LENGTH: u32 = 100;
+
     pub fn new(inner: AsyncTcpStream) -> Self {
         Self { inner }
     }
 
     pub async fn read_line(&self) -> Option<String> {
         let mut inner = self.inner.clone();
+        let mut line = String::new();
 
-        let mut buf = [0u8; 1];
-        inner.read(&mut buf).await.ok();
-        None
+        loop {
+            let mut buffer = [0u8; 1];
+            if let Err(_) | Ok(0) = inner.read(&mut buffer).await {
+                return None;
+            }
 
-        // let mut line = String::new();
-        // loop {
-        //     if let Err(_) | Ok(0) = self.inner.read_line(&mut line).await {
-        //         return None;
-        //     }
-        //
-        //     let result = line.trim();
-        //     if !result.is_empty() {
-        //         return Some(result.to_string());
-        //     }
-        //     line.clear();
-        // }
+            let char = buffer[0] as char;
+
+            if char.is_ascii_whitespace() {
+                if line.is_empty() {
+                    continue;
+                }
+                if char == '\n' {
+                    while line.ends_with(' ') {
+                        line.pop();
+                    }
+                    return Some(line);
+                }
+                line.push(' ');
+            } else if char.is_ascii_graphic() {
+                line.push(char);
+            }
+        }
     }
 
     pub async fn write_line(&self, mut line: String) -> Result<(), std::io::Error> {
