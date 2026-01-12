@@ -1,30 +1,54 @@
+use chrono::Local;
 use clap::Parser;
 use env_logger::Target;
+use frontend::arbiter::control::Control;
+use frontend::arbiter::tournament::Tournament;
 use frontend::line_stream::AsyncLineStream;
 use frontend::protocol::{PlayerMessage, Protocol};
-use frontend::tournament::Tournament;
 use log::{info, warn, LevelFilter};
 use smol::net::TcpStream as AsyncTcpStream;
+use std::io::Write;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
+use std::thread;
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 struct Arguments {
     #[clap(short, long, default_value_t = 5000)]
     port: u16,
-
-    #[clap(long, default_value_t = true)]
-    human: bool,
 }
 
 fn main() {
     let arguments = Arguments::parse();
 
-    let mut builder = env_logger::Builder::from_default_env();
-    builder.filter_level(LevelFilter::max()).target(Target::Stdout).init();
+    let file = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("log.txt")
+        .unwrap();
+
+    env_logger::Builder::from_default_env()
+        .filter_level(LevelFilter::Debug)
+        // .filter_level(LevelFilter::Info)
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{style}[{}] [{:5}]{style:#} {}",
+                Local::now().format("%T%.3f"),
+                record.level(),
+                record.args(),
+                style = buf.default_level_style(record.level()),
+            )
+        })
+        .target(Target::Pipe(Box::new(std::io::BufWriter::new(file))))
+        .target(Target::Stderr)
+        .init();
 
     let address = format!("127.0.0.1:{}", arguments.port);
-    let tournament: Arc<Mutex<Tournament>> = Tournament::new();
+    let tournament: Arc<RwLock<Tournament>> = Tournament::new();
+
+    let mut control = Control::new(tournament.clone());
+    thread::spawn(move || control.begin());
 
     smol::block_on(async {
         let listener = smol::net::TcpListener::bind(&address).await.unwrap();
@@ -38,7 +62,7 @@ fn main() {
     });
 }
 
-async fn connect(tournament: Arc<Mutex<Tournament>>, stream: AsyncTcpStream, address: SocketAddr) {
+async fn connect(tournament: Arc<RwLock<Tournament>>, stream: AsyncTcpStream, address: SocketAddr) {
     let stream = AsyncLineStream::new(stream);
     if let Err(err) = initialize_connection(tournament, stream).await {
         warn!("connection from {address} closed with error {err}");
@@ -46,7 +70,7 @@ async fn connect(tournament: Arc<Mutex<Tournament>>, stream: AsyncTcpStream, add
 }
 
 async fn initialize_connection(
-    tournament: Arc<Mutex<Tournament>>,
+    tournament: Arc<RwLock<Tournament>>,
     stream: AsyncLineStream,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let read = async || Protocol::decode_player(&stream.read_line().await?);
@@ -60,7 +84,7 @@ async fn initialize_connection(
     };
 
     info!("connection initialized as instance for player '{name}'");
-    let mut tournament = tournament.lock().map_err(|_| "tournament poisoned")?;
+    let mut tournament = tournament.write().map_err(|_| "tournament poisoned")?;
     tournament.join(name, stream);
     Ok(())
 }

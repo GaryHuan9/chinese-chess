@@ -208,8 +208,8 @@ impl Game {
                     .map(Some)
                     .chain(std::iter::repeat_n(None, pad))
                     .chain(captured.filter(|piece| !piece.is_red()).map(Some))
-                    .enumerate()
-                    .filter_map(|(i, piece)| if i % HEIGHT == row { Some(piece) } else { None });
+                    .skip(row)
+                    .step_by(HEIGHT);
 
                 for piece in row {
                     if let Some(piece) = piece {
