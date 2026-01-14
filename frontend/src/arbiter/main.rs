@@ -21,11 +21,11 @@ struct Arguments {
 fn main() {
     let arguments = Arguments::parse();
 
-    let file = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open("log.txt")
-        .unwrap();
+    // let file = std::fs::OpenOptions::new()
+    //     .append(true)
+    //     .create(true)
+    //     .open("log.txt")
+    //     .unwrap();
 
     env_logger::Builder::from_default_env()
         .filter_level(LevelFilter::Debug)
@@ -40,7 +40,7 @@ fn main() {
                 style = buf.default_level_style(record.level()),
             )
         })
-        .target(Target::Pipe(Box::new(std::io::BufWriter::new(file))))
+        // .target(Target::Pipe(Box::new(std::io::BufWriter::new(file))))
         .target(Target::Stderr)
         .init();
 

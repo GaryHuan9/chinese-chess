@@ -2,7 +2,7 @@ use chinese_chess::display_format::DisplayFormat;
 use chinese_chess::game::Game;
 use clap::Parser;
 use frontend::line_stream::LineStream;
-use frontend::protocol::{ArbiterMessage, PlayerMessage, Protocol};
+use frontend::protocol::{ArbiterMessage, PlayerMessage};
 use rand::Rng;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream};
@@ -18,45 +18,35 @@ struct Arguments {
     #[arg(short, long, default_value = "robot")]
     name: String,
 
-    #[arg(short, long, default_value_t = true)]
+    #[arg(short, long, default_value_t = false)]
     random: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let arguments = Arguments::parse();
 
-    let stream = TcpStream::connect(SocketAddr::new(arguments.ip, arguments.port))?;
-    let stream = LineStream::new(stream);
-
-    let read = || Protocol::decode_arbiter(&stream.read_line()?);
-    let write = |message| stream.write_line(Protocol::encode_player(&message));
+    let address = SocketAddr::new(arguments.ip, arguments.port);
+    let stream = LineStream::new(TcpStream::connect(address)?);
 
     let mut random = rand::rng();
 
-    write(PlayerMessage::Init { version: 1 })?;
-    write(PlayerMessage::Info {
+    stream.write(&PlayerMessage::Init { version: 1 })?;
+    stream.write(&PlayerMessage::Info {
         name: arguments.name.clone(),
     })?;
 
-    let mut game = None;
+    let mut game = Game::opening();
 
     loop {
-        match read().ok_or("unexpected message")? {
+        match stream.read()? {
             ArbiterMessage::Game { fen, red_turn } => {
-                game = Some(Game::from_fen(&fen, red_turn).unwrap());
-                write(PlayerMessage::Ready)?;
+                game = Game::from_fen(&fen, red_turn).unwrap();
+                stream.write(&PlayerMessage::Ready)?;
             }
             ArbiterMessage::Prompt { time: _time } => {
-                let mut moves = {
-                    let game = game.as_mut().unwrap();
-                    println!("{}", game.display(DisplayFormat::pretty()));
-                    game.moves_ranked()
-                };
+                println!("{}", game.display(DisplayFormat::pretty()));
 
-                if moves.is_empty() {
-                    game = None;
-                    continue;
-                }
+                let mut moves = game.moves_ranked();
 
                 let mv = if arguments.random {
                     moves[random.random_range(0..moves.len())].0
@@ -70,11 +60,16 @@ fn main() -> Result<(), Box<dyn Error>> {
                     moves.first().unwrap().0
                 };
 
-                write(PlayerMessage::Play { mv })?;
+                stream.write(&PlayerMessage::Play { mv })?;
             }
             ArbiterMessage::Update { mv } => {
-                let played = game.as_mut().unwrap().play(mv);
+                println!("arbiter update {mv}");
+                let played = game.play(mv);
                 assert!(played);
+
+                if game.outcome().is_some() {
+                    println!("{}", game.display(DisplayFormat::pretty()));
+                }
             }
         }
     }
