@@ -1,11 +1,9 @@
 use crate::arbiter::tournament::instance::Instance;
-use crate::arbiter::tournament::status::{Score, Status};
+use crate::arbiter::tournament::status::Status;
 use crate::arbiter::tournament::PlayerId;
 use crate::line_stream::AsyncLineStream;
-use chinese_chess::game::Outcome;
 use log::{debug, info, trace};
 use std::collections::{HashMap, VecDeque};
-use std::fmt::Display;
 use std::sync::{Arc, RwLock};
 
 pub struct Player {
@@ -38,7 +36,7 @@ impl Player {
     pub fn enqueue(&mut self, away: PlayerId, count: u32) {
         assert_ne!(self.id, away);
 
-        let status = &mut self.status.entry(away).or_insert_with(Status::new);
+        let status = &mut self.status.entry(away).or_default();
         status.queued += count;
 
         trace!(
@@ -110,8 +108,8 @@ impl Player {
         );
 
         Some(async move {
-            let home_name = home_instance.name().to_owned();
-            let away_name = away_instance.name().to_owned();
+            let home_name = home_instance.name.to_owned();
+            let away_name = away_instance.name.to_owned();
             let (outcome, home_instance, away_instance) = Instance::compete(home_instance, away_instance).await;
 
             // return away instance
@@ -123,11 +121,16 @@ impl Player {
             // update status and return home instance
             let mut home = home.write().unwrap();
             let status = home.status.get_mut(&away_id).unwrap();
-            status.score.merge(&outcome.into());
+
+            if let Some(outcome) = outcome {
+                status.score.merge(&outcome.into());
+                status.running -= 1;
+            } else {
+                status.queued += 1;
+                status.running -= 1;
+            }
 
             debug!("match between '{}' and '{}' done: {}", home_name, away_name, status);
-
-            status.running -= 1;
 
             if let Some(home_instance) = home_instance {
                 home.instances.push_back(home_instance)

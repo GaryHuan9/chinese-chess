@@ -1,4 +1,4 @@
-use crate::arbiter::tournament::status::{Score, Status};
+use crate::arbiter::tournament::status::Status;
 use crate::line_stream::AsyncLineStream;
 use log::debug;
 use player::Player;
@@ -47,6 +47,7 @@ impl Tournament {
         self.match_all();
     }
 
+    #[must_use]
     pub fn enqueue(&'_ self, name: &str) -> Option<Queue<'_>> {
         self.ids.get(name).copied().map(|id| Queue::new(self, id))
     }
@@ -54,13 +55,14 @@ impl Tournament {
     pub fn status(&self, name: &str) -> Option<impl Iterator<Item = (String, Status)>> {
         let id = self.ids.get(name).copied()?;
 
-        // must collect first to avoid deadlock as with are holding a read lock
+        // must collect first to avoid deadlock as with are holding a read lock here when getting the name
         let result = self.players[id].read().unwrap().iter_status().collect::<Box<_>>();
         let mut result = result
             .into_iter()
             .map(|(id, status)| (self.players[id].read().unwrap().name.clone(), status))
             .collect::<HashMap<_, _>>();
 
+        // merge all status between the same two pairs of players
         for (other_id, player) in self.players.iter().enumerate() {
             let player = player.read().unwrap();
 
@@ -84,6 +86,10 @@ impl Tournament {
         Some(result.into_iter())
     }
 
+    pub fn iter_players(&self) -> impl Iterator<Item = &String> {
+        self.ids.keys()
+    }
+
     fn match_all(&self) {
         debug!("attempting to match all available players");
 
@@ -91,7 +97,7 @@ impl Tournament {
             .players
             .iter()
             .enumerate()
-            .map(|(id, player)| {
+            .flat_map(|(id, player)| {
                 player
                     .read()
                     .unwrap()
@@ -99,7 +105,6 @@ impl Tournament {
                     .map(|(other_id, queued)| (id, other_id, queued))
                     .collect::<Vec<_>>()
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         loop {
@@ -112,9 +117,7 @@ impl Tournament {
 
                 let home = self.players[*home].clone();
                 let away = self.players[*away].clone();
-                let Some(future) = Player::play(home, away) else {
-                    return None;
-                };
+                let future = Player::play(home, away)?;
 
                 *queued -= 1;
                 let this = self.this.upgrade().unwrap();
@@ -138,7 +141,6 @@ pub struct Queue<'a> {
     tournament: &'a Tournament,
     player: PlayerId,
     pending: Vec<(String, bool, u32)>,
-    except: Vec<String>,
 }
 
 impl<'a> Queue<'a> {
@@ -147,40 +149,38 @@ impl<'a> Queue<'a> {
             tournament,
             player,
             pending: Vec::new(),
-            except: Vec::new(),
         }
     }
 
     #[must_use]
-    pub fn against(&mut self, name: String, count: u32) -> &Self {
+    pub fn against(mut self, name: String, count: u32) -> Self {
         self.pending.push((name.clone(), true, count.div_ceil(2)));
         self.pending.push((name, false, count.div(2)));
         self
     }
 
     #[must_use]
-    pub fn against_all(&mut self, count: u32) -> &Self {
+    pub fn against_all_except<T, I>(mut self, except: I, count: u32) -> Self
+    where
+        T: for<'b> PartialEq<&'b str>,
+        I: IntoIterator<Item = T>,
+    {
+        let mut except = except.into_iter();
         for (name, id) in &self.tournament.ids {
-            if *id != self.player {
-                let _ = self.against(name.clone(), count);
+            if *id != self.player && except.all(|n| n != name) {
+                self = self.against(name.clone(), count);
             }
         }
         self
     }
 
     #[must_use]
-    pub fn against_as(&mut self, name: String, red: bool) -> &Self {
+    pub fn against_as(mut self, name: String, red: bool) -> Self {
         self.pending.push((name, red, 1));
         self
     }
 
-    #[must_use]
-    pub fn except(&mut self, name: String) -> &Self {
-        self.except.push(name);
-        self
-    }
-
-    pub fn done(self) -> Result<(), impl IntoIterator> {
+    pub fn done(self) -> Result<(), impl IntoIterator<Item = String>> {
         let mut unknown = HashSet::new();
 
         for (name, home, count) in self.pending {
@@ -189,10 +189,6 @@ impl<'a> Queue<'a> {
                 continue;
             };
 
-            if self.except.contains(&name) || id == self.player {
-                continue;
-            }
-
             if count > 0 {
                 let (home, away) = if home { (self.player, id) } else { (id, self.player) };
                 self.tournament.players[home].write().unwrap().enqueue(away, count);
@@ -200,12 +196,6 @@ impl<'a> Queue<'a> {
         }
 
         self.tournament.match_all();
-
-        unknown.extend(
-            self.except
-                .into_iter()
-                .filter(|name| !self.tournament.ids.contains_key(name)),
-        );
         if unknown.is_empty() { Ok(()) } else { Err(unknown) }
     }
 }

@@ -24,7 +24,7 @@ pub struct Protocol;
 
 impl Protocol {
     fn decode(line: &str) -> (&str, impl Iterator<Item = &str>) {
-        let mut parts = line.trim().split_whitespace().fuse();
+        let mut parts = line.split_whitespace().fuse();
         (parts.next().unwrap_or(""), parts)
     }
 

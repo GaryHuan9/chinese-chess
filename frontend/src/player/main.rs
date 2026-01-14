@@ -9,16 +9,16 @@ use std::net::{IpAddr, SocketAddr, TcpStream};
 
 #[derive(Parser, Debug)]
 struct Arguments {
-    #[clap(short, long, default_value = "127.0.0.1")]
+    #[arg(short, long, default_value = "127.0.0.1")]
     ip: IpAddr,
 
-    #[clap(short, long, default_value_t = 5000)]
+    #[arg(short, long, default_value_t = 5000)]
     port: u16,
 
-    #[clap(short, long, default_value = "robot")]
+    #[arg(short, long, default_value = "robot")]
     name: String,
 
-    #[clap(short, long, default_value_t = true)]
+    #[arg(short, long, default_value_t = true)]
     random: bool,
 }
 
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let arguments = Arguments::parse();
 
     let stream = TcpStream::connect(SocketAddr::new(arguments.ip, arguments.port))?;
-    let stream = LineStream::new(&stream);
+    let stream = LineStream::new(stream);
 
     let read = || Protocol::decode_arbiter(&stream.read_line()?);
     let write = |message| stream.write_line(Protocol::encode_player(&message));

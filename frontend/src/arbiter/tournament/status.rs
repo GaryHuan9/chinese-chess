@@ -31,9 +31,15 @@ impl Status {
     }
 }
 
+impl Default for Status {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} queued {} running", self.score, self.queued, self.running)
+        write!(f, "{} queued ({}) running ({})", self.score, self.queued, self.running)
     }
 }
 
@@ -67,8 +73,14 @@ impl From<Outcome> for Score {
     }
 }
 
+impl Default for Score {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} win {} loss {} draw", self.win, self.loss, self.draw)
+        write!(f, "w({}) l({}) d({})", self.win, self.loss, self.draw)
     }
 }

@@ -1,7 +1,7 @@
 use chrono::Local;
 use clap::Parser;
 use env_logger::Target;
-use frontend::arbiter::control::Control;
+use frontend::arbiter::control;
 use frontend::arbiter::tournament::Tournament;
 use frontend::line_stream::AsyncLineStream;
 use frontend::protocol::{PlayerMessage, Protocol};
@@ -29,7 +29,7 @@ fn main() {
 
     env_logger::Builder::from_default_env()
         .filter_level(LevelFilter::Debug)
-        // .filter_level(LevelFilter::Info)
+        .filter_level(LevelFilter::max())
         .format(|buf, record| {
             writeln!(
                 buf,
@@ -44,11 +44,14 @@ fn main() {
         .target(Target::Stderr)
         .init();
 
-    let address = format!("127.0.0.1:{}", arguments.port);
     let tournament: Arc<RwLock<Tournament>> = Tournament::new();
+    let address = format!("127.0.0.1:{}", arguments.port);
 
-    let mut control = Control::new(tournament.clone());
-    thread::spawn(move || control.begin());
+    {
+        let tournament = tournament.clone();
+        let address = address.clone();
+        thread::spawn(move || control::begin(tournament, address));
+    }
 
     smol::block_on(async {
         let listener = smol::net::TcpListener::bind(&address).await.unwrap();
