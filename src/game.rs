@@ -86,7 +86,6 @@ impl Game {
         self.board.undo(mv, capture);
 
         self.moves = self.board.iter_legal_moves(self.red_turn).collect();
-
         Some(mv)
     }
 
@@ -94,27 +93,40 @@ impl Game {
         &self.moves
     }
 
-    pub fn moves_ranked(&self) -> Vec<(Move, i32)> {
+    pub fn moves_ranked(&self) -> Vec<(Move, i32, u32)> {
         let mut board = self.board.clone();
 
-        // fn search(board: &mut Board, red: bool, depth: i32) -> i32 {
-        //     board.iter_legal_moves(red)
-        //         .map(|mv| {
-        //             let (_, capture) = board.play(mv);
-        //             let value = board.evaluate(self.red_turn);
-        //             board.undo(mv, capture);
-        //             (mv, value)
-        //         }).fold(i32::MIN, )
-        //
-        // }
+        fn search(board: &mut Board, red: bool, depth: i32, sibling: i32) -> (i32, u32) {
+            if depth == 0 {
+                return (board.evaluate(red), 1);
+            }
+
+            let mut best = -i32::MAX;
+            let mut total = 0u32;
+
+            for mv in board.iter_legal_moves(red).collect::<Box<_>>() {
+                let (_, capture) = board.play(mv);
+                let (value, count) = search(board, !red, depth - 1, -best);
+                board.undo(mv, capture);
+
+                best = best.max(-value);
+                total += count;
+
+                if best >= sibling {
+                    break;
+                }
+            }
+
+            (best, total)
+        }
 
         self.moves
             .iter()
             .map(|&mv| {
                 let (_, capture) = board.play(mv);
-                let value = board.evaluate(self.red_turn);
+                let (value, count) = search(&mut board, !self.red_turn, 3, i32::MAX);
                 board.undo(mv, capture);
-                (mv, value)
+                (mv, -value, count)
             })
             .collect()
     }
@@ -167,7 +179,7 @@ impl Game {
                         if let Some(piece) = game.board[location] {
                             let piece = piece.display(format.with_concise(true));
                             if format.effects && mv.to == location {
-                                write!(f, " \x1B[3m{piece}\x1B[0m")?;
+                                write!(f, " \x1B[3;4m{piece}\x1B[0m")?;
                             } else {
                                 write!(f, " {piece}")?;
                             }

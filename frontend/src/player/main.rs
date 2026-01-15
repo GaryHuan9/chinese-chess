@@ -3,7 +3,6 @@ use chinese_chess::game::Game;
 use clap::Parser;
 use frontend::line_stream::LineStream;
 use frontend::protocol::{ArbiterMessage, PlayerMessage};
-use rand::Rng;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 
@@ -17,9 +16,6 @@ struct Arguments {
 
     #[arg(short, long, default_value = "robot")]
     name: String,
-
-    #[arg(short, long, default_value_t = false)]
-    random: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -27,8 +23,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let address = SocketAddr::new(arguments.ip, arguments.port);
     let stream = LineStream::new(TcpStream::connect(address)?);
-
-    let mut random = rand::rng();
 
     stream.write(&PlayerMessage::Init { version: 1 })?;
     stream.write(&PlayerMessage::Info {
@@ -48,17 +42,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 let mut moves = game.moves_ranked();
 
-                let mv = if arguments.random {
-                    moves[random.random_range(0..moves.len())].0
-                } else {
-                    moves.sort_by_key(|&(_, v)| -v);
+                moves.sort_by_key(|&(_, v, _)| -v);
 
-                    for &(mv, value) in &moves {
-                        println!("{} - {}", mv, value);
-                    }
+                for &(mv, value, count) in &moves {
+                    println!("{} - ({count}) - {}", mv, value);
+                }
 
-                    moves.first().unwrap().0
-                };
+                println!("{}", moves.iter().map(|&(_, _, c)| c).sum::<u32>());
+
+                let mv = moves.first().unwrap().0;
 
                 stream.write(&PlayerMessage::Play { mv })?;
             }

@@ -18,23 +18,26 @@ impl Instance {
 
     pub async fn compete(home: Instance, away: Instance) -> (Option<Outcome>, Option<Instance>, Option<Instance>) {
         let game = Game::opening();
+
         debug!(
             "creating game with standard openings for '{}' as red and '{}' as black",
             home.name, away.name
         );
 
         // try to initialize the game
-        if let Err(id) = Self::compete_init(&game, &home, &away).await {
-            let (result, name) = if id == home.id {
-                ((None, None, Some(away)), home.name)
-            } else {
-                assert_eq!(id, away.id);
-                ((None, Some(home), None), away.name)
-            };
+        let home_init = Self::compete_init(&game, &home);
+        let away_init = Self::compete_init(&game, &away);
+        let (home_init, away_init) = smol::future::zip(home_init, away_init).await;
 
-            warn!("game failed to initialize due to '{name}' disconnecting prematurely");
-            return result;
+        if !home_init || !away_init {
+            return (
+                None,
+                if home_init { Some(home) } else { None },
+                if away_init { Some(away) } else { None },
+            );
         }
+
+        trace!("both '{}' and '{}' are ready for game", home.name, away.name);
 
         // home will always be playing red
         match Self::compete_main(game, &home, &away).await {
@@ -57,7 +60,13 @@ impl Instance {
         self.stream
             .read_line()
             .await
-            .and_then(|line| Protocol::decode_player(&line))
+            .and_then(|line| {
+                let result = Protocol::decode_player(&line);
+                if result.is_none() {
+                    warn!("failed to decode '{}' message: {line}", self.name);
+                }
+                result
+            })
             .ok_or(self.id)
     }
 
@@ -68,24 +77,24 @@ impl Instance {
             .map_err(|_| self.id)
     }
 
-    async fn compete_init(game: &Game, home: &Instance, away: &Instance) -> Result<(), PlayerId> {
-        let message = ArbiterMessage::from_game(game);
-        smol::future::try_zip(home.send(&message), away.send(&message)).await?;
-
-        let wait = async |player: &Instance| -> Result<(), PlayerId> {
-            while !matches!(player.recv().await?, PlayerMessage::Ready) {}
-            Ok(())
+    async fn compete_init(game: &Game, instance: &Instance) -> bool {
+        let result = async {
+            instance.send(&ArbiterMessage::from_game(game)).await?;
+            while !matches!(instance.recv().await?, PlayerMessage::Ready) {}
+            Ok::<(), PlayerId>(())
         };
-
-        smol::future::try_zip(wait(home), wait(away)).await?;
-        trace!("both '{}' and '{}' are ready for game", home.name, away.name);
-        Ok(())
+        if result.await.is_err() {
+            warn!("game failed to initialize for '{}'", instance.name);
+            false
+        } else {
+            true
+        }
     }
 
     async fn compete_main(mut game: Game, home: &Instance, away: &Instance) -> Result<Outcome, PlayerId> {
         loop {
             // one move
-            let prompt = async |game: &mut Game, player: &Instance| -> Result<Option<Outcome>, PlayerId> {
+            let prompt = async |game: &mut Game, instance: &Instance| -> Result<Option<Outcome>, PlayerId> {
                 if let Some(outcome) = game.outcome() {
                     debug!(
                         "game between '{}' and '{}' concluded normally with {outcome}",
@@ -96,17 +105,21 @@ impl Instance {
 
                 let mv = loop {
                     let time = 1000;
-                    trace!("prompting '{}' for next move with {time}ms remaining", player.name);
+                    trace!("prompting '{}' for next move with {time}ms remaining", instance.name);
+                    instance.send(&ArbiterMessage::Prompt { time }).await?;
 
-                    player.send(&ArbiterMessage::Prompt { time }).await?;
-                    let PlayerMessage::Play { mv } = player.recv().await? else {
-                        continue;
+                    let PlayerMessage::Play { mv } = instance.recv().await? else {
+                        warn!(
+                            "disconnecting '{}' due to unexpected message during game",
+                            instance.name
+                        );
+                        return Err(instance.id);
                     };
 
                     let legal = game.play(mv);
                     trace!(
                         "'{}' requested to play {} move {mv}",
-                        player.name,
+                        instance.name,
                         if legal { "legal" } else { "illegal" }
                     );
 
@@ -120,10 +133,12 @@ impl Instance {
                 Ok(None)
             };
 
+            // red move
             if let Some(outcome) = prompt(&mut game, home).await? {
                 return Ok(outcome);
             }
 
+            // black move
             if let Some(outcome) = prompt(&mut game, away).await? {
                 return Ok(outcome);
             }

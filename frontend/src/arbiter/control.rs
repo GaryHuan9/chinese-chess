@@ -3,7 +3,7 @@ use crate::line_stream::LineStream;
 use crate::protocol::{ArbiterMessage, PlayerMessage};
 use chinese_chess::display_format::DisplayFormat;
 use chinese_chess::game::Game;
-use chinese_chess::location::Move;
+use chinese_chess::location::{Location, Move};
 use clap::{Parser, Subcommand};
 use std::io::Error;
 use std::net::TcpStream;
@@ -26,21 +26,13 @@ enum Command {
         )]
         count: u32,
     },
-    #[command(about = "play against another player as a human player")]
-    Compete {
+    #[command(alias = "c", about = "play against another player as a human player")]
+    Contest {
+        #[arg(default_value = "robot")]
         against: String,
         #[arg(short, long, default_value_t = false, help = "whether to play as red")]
         red: bool,
     },
-}
-
-#[derive(Subcommand, Debug)]
-enum Compete {
-    #[command(alias = "p")]
-    Play {
-        mv: Move,
-    },
-    End,
 }
 
 pub fn begin(tournament: Arc<RwLock<Tournament>>, address: String) {
@@ -93,7 +85,7 @@ fn begin_control(tournament: Arc<RwLock<Tournament>>, address: String) {
                     }
                 }
             }
-            Command::Compete { against, red } => {
+            Command::Contest { against, red } => {
                 let init = || -> Result<LineStream, Error> {
                     let stream = LineStream::new(TcpStream::connect(&address)?);
                     stream.write(&PlayerMessage::Init { version: 1 })?;
@@ -146,14 +138,12 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     stream.write(&PlayerMessage::Ready)?;
-    let mut just_played = false;
 
     loop {
         loop {
             match stream.read()? {
                 ArbiterMessage::Prompt { .. } => break,
                 ArbiterMessage::Update { mv } => {
-                    just_played = false;
                     game.play(mv);
 
                     if game.outcome().is_some() {
@@ -161,22 +151,63 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
                         return Ok(());
                     }
                 }
-                _ => return Err("unexpected message type".into()),
+                ArbiterMessage::Game { fen, red_turn } => {
+                    game = Game::from_fen(&fen, red_turn).unwrap();
+                    stream.write(&PlayerMessage::Ready)?;
+                }
             };
         }
 
-        if just_played {
-            println!("illegal move");
-        } else {
-            println!("{}", game.display(DisplayFormat::pretty()));
-        }
+        println!("{}", game.display(DisplayFormat::pretty()));
 
-        match read_input() {
-            Compete::Play { mv } => {
-                stream.write(&PlayerMessage::Play { mv })?;
-                just_played = true;
+        loop {
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            let line = line.trim().to_lowercase();
+
+            let mv = {
+                if let Ok(mv) = line.parse::<Move>() {
+                    Some(mv)
+                } else {
+                    let mut moves = game.moves().clone();
+
+                    for (i, char) in line.chars().enumerate() {
+                        if moves.len() <= 1 {
+                            break;
+                        }
+
+                        if !char.is_ascii_alphanumeric() {
+                            continue;
+                        }
+
+                        let filter: Box<dyn Fn(Location) -> bool> = if char.is_ascii_digit() {
+                            let y = (char as u8).wrapping_sub(b'0');
+                            Box::new(move |location| location.y() == y as i8)
+                        } else {
+                            let x = (char as u8).wrapping_sub(b'a');
+                            Box::new(move |location| location.x() == x as i8)
+                        };
+
+                        moves.retain(|mv| filter(if i <= 1 { mv.from } else { mv.to }));
+                    }
+
+                    if moves.len() == 1 { moves.first().cloned() } else { None }
+                }
+            };
+
+            if let Some(mv) = mv {
+                if game.moves().contains(&mv) {
+                    stream.write(&PlayerMessage::Play { mv })?;
+                    break;
+                }
+                println!("illegal move");
+            } else if line == "end" {
+                return Ok(());
+            } else if line == "print" {
+                println!("{}", game.display(DisplayFormat::pretty()));
+            } else {
+                println!("unknown input");
             }
-            Compete::End => return Ok(()),
         }
     }
 }
