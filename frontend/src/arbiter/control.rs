@@ -201,7 +201,7 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 }
                 println!("illegal move");
-            } else if line == "end" {
+            } else if line == "end" || line == "stop" {
                 return Ok(());
             } else if line == "print" {
                 println!("{}", game.display(DisplayFormat::pretty()));

@@ -112,9 +112,9 @@ impl Game {
                 best = best.max(-value);
                 total += count;
 
-                if best >= sibling {
-                    break;
-                }
+                // if best >= sibling {
+                //     break;
+                // }
             }
 
             (best, total)
@@ -124,7 +124,7 @@ impl Game {
             .iter()
             .map(|&mv| {
                 let (_, capture) = board.play(mv);
-                let (value, count) = search(&mut board, !self.red_turn, 3, i32::MAX);
+                let (value, count) = search(&mut board, !self.red_turn, 2, i32::MAX);
                 board.undo(mv, capture);
                 (mv, -value, count)
             })
