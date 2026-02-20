@@ -40,19 +40,29 @@ fn main() -> Result<(), Box<dyn Error>> {
             ArbiterMessage::Prompt { time: _time } => {
                 println!("{}", game.display(DisplayFormat::pretty()));
 
-                let mut moves = game.moves_ranked();
+                let mut ranker = game.ranker();
+                let depth = 3;
 
-                moves.sort_by_key(|&(_, v, _)| -v);
+                ranker.rank_recursive(depth);
 
-                for &(mv, value, count) in &moves {
-                    println!("{} - ({count}) - {}", mv, value);
+                let before_rank = ranker.display(DisplayFormat::pretty()).to_string();
+
+                ranker.rank(depth);
+
+                let after_rank = ranker.display(DisplayFormat::pretty()).to_string();
+
+                let before_lines: Vec<&str> = before_rank.lines().collect();
+                let after_lines: Vec<&str> = after_rank.lines().collect();
+                let max_lines = before_lines.len().max(after_lines.len());
+                let max_width = before_lines.iter().map(|s| s.len()).max().unwrap_or(0);
+
+                for i in 0..max_lines {
+                    let left = before_lines.get(i).unwrap_or(&"");
+                    let right = after_lines.get(i).unwrap_or(&"");
+                    println!("{:<width$}  |  {}", left, right, width = max_width);
                 }
 
-                println!("{}", moves.iter().map(|&(_, _, c)| c).sum::<u32>());
-
-                let mv = moves.first().unwrap().0;
-
-                stream.write(&PlayerMessage::Play { mv })?;
+                stream.write(&PlayerMessage::Play { mv: ranker.best() })?;
             }
             ArbiterMessage::Update { mv } => {
                 println!("arbiter update {mv}");

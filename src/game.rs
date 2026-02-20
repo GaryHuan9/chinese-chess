@@ -2,6 +2,7 @@ use crate::board::Board;
 use crate::display_format::DisplayFormat;
 use crate::location::{Location, Move};
 use crate::piece::{Piece, PieceKind};
+use crate::ranker::Ranker;
 use std::fmt::{Display, Formatter};
 
 pub struct Game {
@@ -93,47 +94,25 @@ impl Game {
         &self.moves
     }
 
-    pub fn moves_ranked(&self) -> Vec<(Move, i32, u32)> {
-        let mut board = self.board.clone();
-
-        fn search(board: &mut Board, red: bool, depth: i32, sibling: i32) -> (i32, u32) {
-            if depth == 0 {
-                return (board.evaluate(red), 1);
-            }
-
-            let mut best = -i32::MAX;
-            let mut total = 0u32;
-
-            for mv in board.iter_legal_moves(red).collect::<Box<_>>() {
-                let (_, capture) = board.play(mv);
-                let (value, count) = search(board, !red, depth - 1, -best);
-                board.undo(mv, capture);
-
-                best = best.max(-value);
-                total += count;
-
-                // if best >= sibling {
-                //     break;
-                // }
-            }
-
-            (best, total)
-        }
-
-        self.moves
-            .iter()
-            .map(|&mv| {
-                let (_, capture) = board.play(mv);
-                let (value, count) = search(&mut board, !self.red_turn, 2, i32::MAX);
-                board.undo(mv, capture);
-                (mv, -value, count)
-            })
-            .collect()
+    pub fn ranker(&self) -> Ranker {
+        Ranker::new(self.board.clone(), self.red_turn)
     }
 
     pub fn king_in_check(&self, red: bool) -> bool {
         let king = self.board.find_king(red).unwrap();
         self.board.iter_legal_moves(!red).any(|mv| mv.to == king)
+    }
+
+    pub fn move_rule(&self) -> bool {
+        const LENGTH: usize = 100;
+        if self.history.len() < LENGTH {
+            return false;
+        }
+
+        self.history.iter().rev().take(LENGTH).all(|(mv, capture)| {
+            // no capture made or no pawn movement
+            capture.is_none() && self.board[mv.to].map(|p| p.kind() != PieceKind::Pawn).unwrap_or(true)
+        })
     }
 
     pub fn outcome(&self) -> Option<Outcome> {
@@ -150,18 +129,6 @@ impl Game {
             (true, true) => Some(Outcome::BlackWon),
             (true, false) => Some(Outcome::RedWon),
         }
-    }
-
-    pub fn move_rule(&self) -> bool {
-        const LENGTH: usize = 100;
-        if self.history.len() < LENGTH {
-            return false;
-        }
-
-        self.history.iter().rev().take(LENGTH).all(|(mv, capture)| {
-            // no capture made or no pawn movement
-            capture.is_none() && self.board[mv.to].map(|p| p.kind() != PieceKind::Pawn).unwrap_or(true)
-        })
     }
 
     pub fn display(&self, format: DisplayFormat) -> impl Display {

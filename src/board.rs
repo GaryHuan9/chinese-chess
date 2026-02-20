@@ -1,7 +1,7 @@
 use crate::display_format::DisplayFormat;
 use crate::location::{Location, Move};
 use crate::piece::{Piece, PieceKind};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Index, IndexMut};
 
 #[derive(Clone)]
@@ -330,6 +330,12 @@ impl IndexMut<Location> for Board {
 }
 
 impl Display for Board {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display(DisplayFormat::string()))
+    }
+}
+
+impl Debug for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display(DisplayFormat::string()))
     }
