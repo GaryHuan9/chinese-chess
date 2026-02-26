@@ -67,8 +67,10 @@ impl Game {
             return false;
         }
 
-        let (piece, capture) = self.board.play(mv);
+        let piece = self.board[mv.from].unwrap();
         assert_eq!(self.red_turn, piece.is_red());
+
+        let capture = self.board.play(mv);
 
         if let Some(capture) = capture {
             assert_ne!(self.red_turn, capture.is_red());

@@ -78,14 +78,14 @@ impl Board {
         result
     }
 
-    pub fn play(&mut self, mv: Move) -> (Piece, Option<Piece>) {
+    pub fn play(&mut self, mv: Move) -> Option<Piece> {
         assert_ne!(mv.from, mv.to);
         let piece = self[mv.from].unwrap();
         self[mv.from] = None;
 
         let capture = self[mv.to];
         self[mv.to] = Some(piece);
-        (piece, capture)
+        capture
     }
 
     pub fn undo(&mut self, mv: Move, capture: Option<Piece>) {
@@ -104,11 +104,11 @@ impl Board {
         self.pieces.iter().filter_map(|&p| p).map(|p| p.base_value(red)).sum()
     }
 
-    pub fn iter_legal_moves(&self, red: bool) -> impl Iterator<Item = Move> {
+    pub fn iter_legal_moves(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
         let mut copy = self.clone();
 
         self.iter_basic_moves(red).filter(move |mv| {
-            let (_, capture) = copy.play(*mv);
+            let capture = copy.play(*mv);
             let Some(king) = copy.find_king(red) else {
                 copy.undo(*mv, capture);
                 return false;
@@ -119,7 +119,7 @@ impl Board {
         })
     }
 
-    pub fn iter_basic_moves(&self, red: bool) -> impl Iterator<Item = Move> {
+    pub fn iter_basic_moves(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
         let mut moves = vec![];
         for (index, &piece) in self.pieces.iter().enumerate() {
             let from = Location::from_index(index).unwrap();
@@ -364,8 +364,7 @@ mod tests {
                 board.undo(mv, capture);
             }
 
-            let (_, capture) = board.play(mv);
-            undo_stack.push((play_stack.len(), mv, capture));
+            undo_stack.push((play_stack.len(), mv, board.play(mv)));
 
             let height = undo_stack.len() as u32;
             let red = height.is_multiple_of(2);

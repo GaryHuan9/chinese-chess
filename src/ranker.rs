@@ -18,6 +18,9 @@ struct Entry {
 }
 
 impl Ranker {
+    const MIN_VALUE: i32 = -i32::MAX;
+    const MAX_VALUE: i32 = i32::MAX;
+
     pub fn new(board: Board, red_turn: bool) -> Ranker {
         let entries = board
             .iter_legal_moves(red_turn)
@@ -57,102 +60,103 @@ impl Ranker {
         self.entries.iter().max_by_key(|e| e.value).unwrap().mv
     }
 
-    fn rank_single(board: &mut Board, red_turn: bool, depth: u32, entry: &mut Entry) {
+    fn rank_single(board: &mut Board, red_turn: bool, depth: u32) -> (i32, u32) {
         if depth == 0 {
-            unimplemented!();
+            return (board.evaluate(red_turn), 1);
         }
-        let mut play_stack: Vec<Move> = board.iter_legal_moves(red_turn).collect();
-        let mut undo_stack: Vec<(usize, Move, Option<Piece>, i32)> = vec![];
 
-        // let mut lower = i32::MAX;
-        // let mut upper = i32::MIN;
+        let mut play_stack: Vec<Move> = board.iter_legal_moves(red_turn).rev().collect();
+        let mut undo_stack: Vec<(usize, Move, Option<Piece>, i32, i32)> = vec![];
 
-        let mut best = -i32::MAX;
+        let mut best_value = Self::MIN_VALUE;
+        let mut total_checked = 0;
 
         while let Some(mv) = play_stack.pop() {
-            while let Some(&(index, mv, capture, value)) = undo_stack.last()
-                && index == play_stack.len() + 1
             {
-                undo_stack.pop();
-                board.undo(mv, capture);
-
-                if let Some((_, _, _, parent)) = undo_stack.last_mut() {
-                    *parent = (*parent).max(-value);
+                let (lower_bound, upper_bound) = if let Some(&(_, _, _, parent_lower, parent_upper)) = undo_stack.last()
+                {
+                    (-parent_upper, -parent_lower)
                 } else {
-                    best = best.max(-value);
-                }
-            }
+                    (Self::MIN_VALUE, -best_value)
+                };
 
-            let (_, capture) = board.play(mv);
-            undo_stack.push((play_stack.len(), mv, capture, -i32::MAX));
+                undo_stack.push((play_stack.len(), mv, board.play(mv), lower_bound, upper_bound));
+            }
 
             let height = undo_stack.len() as u32;
             let red_turn = !height.is_multiple_of(2) ^ red_turn;
 
             if depth == height {
-                entry.checked += 1;
-                undo_stack.last_mut().unwrap().3 = board.evaluate(red_turn);
+                total_checked += 1;
+                let var = &mut undo_stack.last_mut().unwrap().3;
+                *var = (*var).max(board.evaluate(red_turn));
             } else {
-                let moves = board.iter_legal_moves(red_turn);
-                play_stack.extend(moves);
+                play_stack.extend(board.iter_legal_moves(red_turn).rev());
+            }
+
+            while let Some(&(index, mv, capture, lower_bound, upper_bound)) = undo_stack.last()
+                && index == play_stack.len()
+            {
+                undo_stack.pop();
+                board.undo(mv, capture);
+
+                if let Some((height, _, _, parent_lower, parent_upper)) = undo_stack.last_mut() {
+                    *parent_lower = (*parent_lower).max(-lower_bound);
+                    if *parent_lower >= *parent_upper {
+                        play_stack.truncate(*height);
+                    }
+                } else {
+                    best_value = best_value.max(-lower_bound);
+                }
             }
         }
 
-        while let Some((_, mv, capture, value)) = undo_stack.pop() {
-            board.undo(mv, capture);
-
-            if let Some((_, _, _, parent)) = undo_stack.last_mut() {
-                *parent = (*parent).max(-value);
-            } else {
-                best = best.max(-value);
-            }
-        }
-
-        entry.value = best;
+        (best_value, total_checked)
     }
 
     pub fn rank(&mut self, depth: u32) {
         for entry in &mut self.entries {
-            let (_, capture) = self.board.play(entry.mv);
+            let capture = self.board.play(entry.mv);
 
-            entry.checked = 0;
-
-            Self::rank_single(&mut self.board, !self.red_turn, depth, entry);
+            let (value, checked) = Self::rank_single(&mut self.board, !self.red_turn, depth);
             self.board.undo(entry.mv, capture);
-            entry.value = -entry.value;
 
-            // println!("{}", self.board.display(DisplayFormat::pretty()));
+            entry.value = -value;
+            entry.checked += checked;
         }
     }
 
     pub fn rank_recursive(&mut self, depth: u32) {
-        fn search(board: &mut Board, red: bool, depth: u32) -> (i32, u32) {
+        fn search(board: &mut Board, red: bool, depth: u32, mut lower_bound: i32, upper_bound: i32) -> (i32, u32) {
             if depth == 0 {
                 return (board.evaluate(red), 1);
             }
 
-            let mut best = -i32::MAX;
             let mut total = 0u32;
 
             for mv in board.iter_legal_moves(red).collect::<Box<_>>() {
-                let (_, capture) = board.play(mv);
-                let (value, count) = search(board, !red, depth - 1);
+                let capture = board.play(mv);
+                let (value, count) = search(board, !red, depth - 1, -upper_bound, -lower_bound);
                 board.undo(mv, capture);
 
-                best = best.max(-value);
+                lower_bound = lower_bound.max(-value);
                 total += count;
+
+                if lower_bound >= upper_bound {
+                    break;
+                }
             }
 
-            (best, total)
+            (lower_bound, total)
         }
 
         for entry in &mut self.entries {
-            let (_, capture) = self.board.play(entry.mv);
-            let (value, checked) = search(&mut self.board, !self.red_turn, depth);
+            let capture = self.board.play(entry.mv);
+            let (value, checked) = search(&mut self.board, !self.red_turn, depth, Self::MIN_VALUE, Self::MAX_VALUE);
             self.board.undo(entry.mv, capture);
 
             entry.value = -value;
-            entry.checked = checked;
+            entry.checked += checked;
         }
     }
 }

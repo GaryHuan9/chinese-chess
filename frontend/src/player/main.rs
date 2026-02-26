@@ -40,28 +40,32 @@ fn main() -> Result<(), Box<dyn Error>> {
             ArbiterMessage::Prompt { time: _time } => {
                 println!("{}", game.display(DisplayFormat::pretty()));
 
+                let depth = 4;
+
+                // let mut ranker = game.ranker();
+                // ranker.rank_recursive(depth);
+                // let recursive_rank = ranker.display(DisplayFormat::pretty()).to_string();
+
+                let start = std::time::Instant::now();
                 let mut ranker = game.ranker();
-                let depth = 3;
-
-                ranker.rank_recursive(depth);
-
-                let before_rank = ranker.display(DisplayFormat::pretty()).to_string();
-
                 ranker.rank(depth);
+                let elapsed = start.elapsed().as_secs_f32();
+                println!("{}", ranker.display(DisplayFormat::pretty()));
+                println!("Time taken: {} ms", elapsed * 1000.0);
 
-                let after_rank = ranker.display(DisplayFormat::pretty()).to_string();
-
-                let before_lines: Vec<&str> = before_rank.lines().collect();
-                let after_lines: Vec<&str> = after_rank.lines().collect();
-                let max_lines = before_lines.len().max(after_lines.len());
-                let max_width = before_lines.iter().map(|s| s.len()).max().unwrap_or(0);
-
-                for i in 0..max_lines {
-                    let left = before_lines.get(i).unwrap_or(&"");
-                    let right = after_lines.get(i).unwrap_or(&"");
-                    println!("{:<width$}  |  {}", left, right, width = max_width);
-                }
-
+                // let iterative_rank = ranker.display(DisplayFormat::pretty()).to_string();
+                //
+                // let recursive_lines: Vec<&str> = recursive_rank.lines().collect();
+                // let iterative_lines: Vec<&str> = iterative_rank.lines().collect();
+                // let max_lines = recursive_lines.len().max(iterative_lines.len());
+                // let recursive_width = recursive_lines.iter().map(|s| s.len()).max().unwrap_or(0);
+                //
+                // for i in 0..max_lines {
+                //     let left = recursive_lines.get(i).unwrap_or(&"");
+                //     let right = iterative_lines.get(i).unwrap_or(&"");
+                //     let diff_marker = if left == right { "" } else { " DIFFERENT" };
+                //     println!("{:<width$}  |  {}{}", left, right, diff_marker, width = recursive_width);
+                // }
                 stream.write(&PlayerMessage::Play { mv: ranker.best() })?;
             }
             ArbiterMessage::Update { mv } => {
