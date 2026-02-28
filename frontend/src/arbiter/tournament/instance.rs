@@ -116,7 +116,7 @@ impl Instance {
                         return Err(instance.id);
                     };
 
-                    let legal = game.play(mv);
+                    let legal = game.can_move(mv);
                     trace!(
                         "'{}' requested to play {} move {mv}",
                         instance.name,
@@ -124,6 +124,7 @@ impl Instance {
                     );
 
                     if legal {
+                        game.make_move(mv);
                         break mv;
                     }
                 };

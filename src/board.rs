@@ -78,7 +78,7 @@ impl Board {
         result
     }
 
-    pub fn play(&mut self, mv: Move) -> Option<Piece> {
+    pub fn make_move(&mut self, mv: Move) -> Option<Piece> {
         assert_ne!(mv.from, mv.to);
         let piece = self[mv.from].unwrap();
         self[mv.from] = None;
@@ -88,7 +88,7 @@ impl Board {
         capture
     }
 
-    pub fn undo(&mut self, mv: Move, capture: Option<Piece>) {
+    pub fn undo_move(&mut self, mv: Move, capture: Option<Piece>) {
         assert!(self[mv.from].is_none());
         self[mv.from] = self[mv.to];
         self[mv.to] = capture;
@@ -100,6 +100,11 @@ impl Board {
         Location::from_index(self.pieces.iter().position(predicate)?)
     }
 
+    pub fn king_in_check(&self, red: bool) -> bool {
+        let king = self.find_king(red).unwrap();
+        self.iter_legal_moves(!red).any(|mv| mv.to == king)
+    }
+
     pub fn evaluate(&self, red: bool) -> i32 {
         self.pieces.iter().filter_map(|&p| p).map(|p| p.base_value(red)).sum()
     }
@@ -108,13 +113,13 @@ impl Board {
         let mut copy = self.clone();
 
         self.iter_basic_moves(red).filter(move |mv| {
-            let capture = copy.play(*mv);
+            let capture = copy.make_move(*mv);
             let Some(king) = copy.find_king(red) else {
-                copy.undo(*mv, capture);
+                copy.undo_move(*mv, capture);
                 return false;
             };
             let legal = copy.iter_basic_moves(!red).filter(|mv| mv.to == king).next();
-            copy.undo(*mv, capture);
+            copy.undo_move(*mv, capture);
             legal.is_none()
         })
     }
@@ -361,10 +366,10 @@ mod tests {
                 && index == play_stack.len() + 1
             {
                 undo_stack.pop();
-                board.undo(mv, capture);
+                board.undo_move(mv, capture);
             }
 
-            undo_stack.push((play_stack.len(), mv, board.play(mv)));
+            undo_stack.push((play_stack.len(), mv, board.make_move(mv)));
 
             let height = undo_stack.len() as u32;
             let red = height.is_multiple_of(2);

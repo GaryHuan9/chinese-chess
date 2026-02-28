@@ -2,14 +2,13 @@ use crate::board::Board;
 use crate::display_format::DisplayFormat;
 use crate::location::{Location, Move};
 use crate::piece::{Piece, PieceKind};
-use crate::ranker::Ranker;
 use std::fmt::{Display, Formatter};
 
+#[derive(Clone)]
 pub struct Game {
     board: Board,
     red_turn: bool,
     history: Vec<(Move, Option<Piece>)>,
-    moves: Vec<Move>,
 }
 
 #[derive(Debug)]
@@ -20,33 +19,12 @@ pub enum Outcome {
     MoveRule,  // draw from the 50-move rule
 }
 
-impl Outcome {
-    pub fn display(&self, format: DisplayFormat) -> impl Display {
-        let king = |red| Piece::from_kind(PieceKind::King, red);
-        let format = format.with_concise(false);
-        match self {
-            Self::RedWon => format!("{} won by checkmating black", king(true).display(format)),
-            Self::BlackWon => format!("{} won by checkmating red", king(false).display(format)),
-            Self::Stalemate => "draw by stalemate".to_owned(),
-            Self::MoveRule => "draw by 50-move rule".to_owned(),
-        }
-    }
-}
-
-impl Display for Outcome {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.display(DisplayFormat::string()))
-    }
-}
-
 impl Game {
     pub fn new(board: Board, red_turn: bool) -> Self {
-        let moves = board.iter_legal_moves(red_turn).collect();
         Self {
             board,
             red_turn,
             history: Vec::new(),
-            moves,
         }
     }
 
@@ -58,19 +36,27 @@ impl Game {
         Some(Self::new(Board::from_fen(fen)?, red_turn))
     }
 
-    pub fn fen(&self) -> (String, bool) {
-        (self.board.fen(), self.red_turn)
+    pub fn board(&self) -> &Board {
+        &self.board
     }
 
-    pub fn play(&mut self, mv: Move) -> bool {
-        if self.outcome().is_some() || !self.moves.contains(&mv) {
-            return false;
-        }
+    pub fn red_turn(&self) -> bool {
+        self.red_turn
+    }
 
+    pub fn iter_moves(&self) -> impl DoubleEndedIterator<Item = Move> {
+        self.board.iter_legal_moves(self.red_turn)
+    }
+
+    pub fn evaluate(&self) -> i32 {
+        self.board.evaluate(self.red_turn)
+    }
+
+    pub fn make_move(&mut self, mv: Move) {
         let piece = self.board[mv.from].unwrap();
         assert_eq!(self.red_turn, piece.is_red());
 
-        let capture = self.board.play(mv);
+        let capture = self.board.make_move(mv);
 
         if let Some(capture) = capture {
             assert_ne!(self.red_turn, capture.is_red());
@@ -78,31 +64,16 @@ impl Game {
 
         self.red_turn = !self.red_turn;
         self.history.push((mv, capture));
-
-        self.moves = self.board.iter_legal_moves(self.red_turn).collect();
-        true
     }
 
-    pub fn undo(&mut self) -> Option<Move> {
-        let (mv, capture) = self.history.pop()?;
+    pub fn undo_move(&mut self) {
+        let (mv, capture) = self.history.pop().unwrap();
         self.red_turn = !self.red_turn;
-        self.board.undo(mv, capture);
-
-        self.moves = self.board.iter_legal_moves(self.red_turn).collect();
-        Some(mv)
+        self.board.undo_move(mv, capture);
     }
 
-    pub fn moves(&self) -> &Vec<Move> {
-        &self.moves
-    }
-
-    pub fn ranker(&self) -> Ranker {
-        Ranker::new(self.board.clone(), self.red_turn)
-    }
-
-    pub fn king_in_check(&self, red: bool) -> bool {
-        let king = self.board.find_king(red).unwrap();
-        self.board.iter_legal_moves(!red).any(|mv| mv.to == king)
+    pub fn can_move(&self, mv: Move) -> bool {
+        self.outcome().is_none() && self.iter_moves().any(|i| i == mv)
     }
 
     pub fn move_rule(&self) -> bool {
@@ -113,7 +84,7 @@ impl Game {
 
         self.history.iter().rev().take(LENGTH).all(|(mv, capture)| {
             // no capture made or no pawn movement
-            capture.is_none() && self.board[mv.to].map(|p| p.kind() != PieceKind::Pawn).unwrap_or(true)
+            capture.is_none() && self.board[mv.to].map(|i| i.kind() != PieceKind::Pawn).unwrap_or(true)
         })
     }
 
@@ -122,11 +93,11 @@ impl Game {
             return Some(Outcome::MoveRule);
         }
 
-        if !self.moves.is_empty() {
+        if self.iter_moves().any(|_| true) {
             return None;
         }
 
-        match (self.king_in_check(self.red_turn), self.red_turn) {
+        match (self.board.king_in_check(self.red_turn), self.red_turn) {
             (false, _) => Some(Outcome::Stalemate),
             (true, true) => Some(Outcome::BlackWon),
             (true, false) => Some(Outcome::RedWon),
@@ -236,11 +207,10 @@ impl Game {
                 if let Some(outcome) = game.outcome() {
                     write!(f, "{}", outcome.display(format))?;
                 } else {
-                    let check = game.king_in_check(game.red_turn);
+                    let check = game.board().king_in_check(game.red_turn);
                     let king = Piece::from_kind(PieceKind::King, game.red_turn).display(format);
                     write!(f, "{king} {} - ", if check { "in check" } else { "to play" })?;
-
-                    write!(f, "{} legal moves", game.moves().len())?;
+                    write!(f, "{} legal moves", game.iter_moves().count())?;
                 }
 
                 writeln!(f)
@@ -250,6 +220,25 @@ impl Game {
 }
 
 impl Display for Game {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display(DisplayFormat::string()))
+    }
+}
+
+impl Outcome {
+    pub fn display(&self, format: DisplayFormat) -> impl Display {
+        let king = |red| Piece::from_kind(PieceKind::King, red);
+        let format = format.with_concise(false);
+        match self {
+            Self::RedWon => format!("{} won by checkmating black", king(true).display(format)),
+            Self::BlackWon => format!("{} won by checkmating red", king(false).display(format)),
+            Self::Stalemate => "draw by stalemate".to_owned(),
+            Self::MoveRule => "draw by 50-move rule".to_owned(),
+        }
+    }
+}
+
+impl Display for Outcome {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display(DisplayFormat::string()))
     }

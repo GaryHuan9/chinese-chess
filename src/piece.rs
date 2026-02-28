@@ -70,7 +70,7 @@ impl Piece {
 
     pub fn base_value(&self, red: bool) -> i32 {
         let value = match self.kind() {
-            PieceKind::King => 1000000,
+            PieceKind::King => 10000000,
             PieceKind::Advisor => 2000,
             PieceKind::Elephant => 2000,
             PieceKind::Horse => 4000,

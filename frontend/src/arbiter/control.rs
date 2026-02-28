@@ -144,7 +144,7 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
             match stream.read()? {
                 ArbiterMessage::Prompt { .. } => break,
                 ArbiterMessage::Update { mv } => {
-                    game.play(mv);
+                    game.make_move(mv);
 
                     if game.outcome().is_some() {
                         println!("{}", game.display(DisplayFormat::pretty()));
@@ -169,7 +169,7 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(mv) = line.parse::<Move>() {
                     Some(mv)
                 } else {
-                    let mut moves = game.moves().clone();
+                    let mut moves = game.iter_moves().collect::<Vec<_>>();
 
                     for (i, char) in line.chars().enumerate() {
                         if moves.len() <= 1 {
@@ -196,11 +196,8 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
             };
 
             if let Some(mv) = mv {
-                if game.moves().contains(&mv) {
-                    stream.write(&PlayerMessage::Play { mv })?;
-                    break;
-                }
-                println!("illegal move");
+                stream.write(&PlayerMessage::Play { mv })?;
+                break;
             } else if line == "end" || line == "stop" {
                 return Ok(());
             } else if line == "print" {

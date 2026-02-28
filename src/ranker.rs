@@ -1,12 +1,10 @@
-use crate::board::Board;
 use crate::display_format::DisplayFormat;
+use crate::game::Game;
 use crate::location::Move;
-use crate::piece::Piece;
 use std::fmt::{Display, Formatter};
 
 pub struct Ranker {
-    board: Board,
-    red_turn: bool,
+    game: Game,
     entries: Vec<Entry>,
 }
 
@@ -18,23 +16,37 @@ struct Entry {
 }
 
 impl Ranker {
-    const MIN_VALUE: i32 = -i32::MAX;
-    const MAX_VALUE: i32 = i32::MAX;
+    const MIN_VALUE: i32 = -(i32::MAX - 42);
+    const MAX_VALUE: i32 = -Self::MIN_VALUE;
 
-    pub fn new(board: Board, red_turn: bool) -> Ranker {
-        let entries = board
-            .iter_legal_moves(red_turn)
+    pub fn new(game: Game) -> Ranker {
+        let entries = game
+            .iter_moves()
             .map(|mv| Entry {
                 mv,
                 value: 0,
                 checked: 0,
             })
             .collect();
-        Ranker {
-            board,
-            red_turn,
-            entries,
-        }
+        Ranker { game, entries }
+    }
+
+    pub fn game(&self) -> &Game {
+        &self.game
+    }
+
+    pub fn make_move(&mut self, mv: Move) {
+        self.game.make_move(mv);
+        let entries = self
+            .game
+            .iter_moves()
+            .map(|mv| Entry {
+                mv,
+                value: 0,
+                checked: 0,
+            })
+            .collect();
+        self.entries = entries;
     }
 
     pub fn display(&self, format: DisplayFormat) -> impl Display {
@@ -60,100 +72,137 @@ impl Ranker {
         self.entries.iter().max_by_key(|e| e.value).unwrap().mv
     }
 
-    fn rank_single(board: &mut Board, red_turn: bool, depth: u32) -> (i32, u32) {
+    fn rank_single(game: &mut Game, depth: u32, lower: i32) -> (i32, u32) {
         if depth == 0 {
-            return (board.evaluate(red_turn), 1);
+            return (game.evaluate(), 1);
         }
 
-        let mut play_stack: Vec<Move> = board.iter_legal_moves(red_turn).rev().collect();
-        let mut undo_stack: Vec<(usize, Move, Option<Piece>, i32, i32)> = vec![];
-
-        let mut best_value = Self::MIN_VALUE;
+        let mut play_stack: Vec<Move> = game.iter_moves().collect();
+        let mut undo_stack: Vec<(u32, i32, i32, i32)> = vec![(0, Self::MIN_VALUE, Self::MIN_VALUE, -lower)];
         let mut total_checked = 0;
 
         while let Some(mv) = play_stack.pop() {
-            {
-                let (lower_bound, upper_bound) = if let Some(&(_, _, _, parent_lower, parent_upper)) = undo_stack.last()
-                {
-                    (-parent_upper, -parent_lower)
-                } else {
-                    (Self::MIN_VALUE, -best_value)
-                };
+            game.make_move(mv);
 
-                undo_stack.push((play_stack.len(), mv, board.play(mv), lower_bound, upper_bound));
+            if (undo_stack.len() as u32) < depth {
+                let &(_, _, lower, upper) = undo_stack.last().unwrap();
+                let (lower, upper) = (-upper, -lower);
+                undo_stack.push((play_stack.len() as u32, Self::MIN_VALUE, lower, upper));
+                play_stack.extend(game.iter_moves());
+                continue;
             }
 
-            let height = undo_stack.len() as u32;
-            let red_turn = !height.is_multiple_of(2) ^ red_turn;
+            total_checked += 1;
+            let value = game.evaluate();
+            game.undo_move();
 
-            if depth == height {
-                total_checked += 1;
-                let var = &mut undo_stack.last_mut().unwrap().3;
-                *var = (*var).max(board.evaluate(red_turn));
-            } else {
-                play_stack.extend(board.iter_legal_moves(red_turn).rev());
+            let (height, best, lower, upper) = undo_stack.last_mut().unwrap();
+            *best = (*best).max(-value);
+            *lower = (*lower).max(-value);
+            if *lower >= *upper {
+                play_stack.truncate(*height as usize);
             }
 
-            while let Some(&(index, mv, capture, lower_bound, upper_bound)) = undo_stack.last()
-                && index == play_stack.len()
+            while let &(height, value, _, _) = undo_stack.last().unwrap()
+                && height == play_stack.len() as u32
             {
+                if undo_stack.len() == 1 {
+                    break;
+                }
+
                 undo_stack.pop();
-                board.undo(mv, capture);
+                game.undo_move();
 
-                if let Some((height, _, _, parent_lower, parent_upper)) = undo_stack.last_mut() {
-                    *parent_lower = (*parent_lower).max(-lower_bound);
-                    if *parent_lower >= *parent_upper {
-                        play_stack.truncate(*height);
-                    }
-                } else {
-                    best_value = best_value.max(-lower_bound);
+                let (height, best, lower, upper) = undo_stack.last_mut().unwrap();
+                *best = (*best).max(-value);
+                *lower = (*lower).max(-value);
+                if *lower >= *upper {
+                    play_stack.truncate(*height as usize);
                 }
             }
         }
 
-        (best_value, total_checked)
+        (undo_stack.last().unwrap().1, total_checked)
     }
 
     pub fn rank(&mut self, depth: u32) {
-        for entry in &mut self.entries {
-            let capture = self.board.play(entry.mv);
+        let mut lower = Self::MIN_VALUE;
 
-            let (value, checked) = Self::rank_single(&mut self.board, !self.red_turn, depth);
-            self.board.undo(entry.mv, capture);
+        for entry in &mut self.entries {
+            self.game.make_move(entry.mv);
+            let (value, checked) = Self::rank_single(&mut self.game, depth, lower - 1);
+            self.game.undo_move();
 
             entry.value = -value;
             entry.checked += checked;
+            lower = lower.max(-value);
         }
     }
 
     pub fn rank_recursive(&mut self, depth: u32) {
-        fn search(board: &mut Board, red: bool, depth: u32, mut lower_bound: i32, upper_bound: i32) -> (i32, u32) {
+        fn search(game: &mut Game, depth: u32, mut lower: i32, upper: i32) -> (i32, u32) {
             if depth == 0 {
-                return (board.evaluate(red), 1);
+                return (game.evaluate(), 1);
             }
 
             let mut total = 0u32;
+            let mut best = Ranker::MIN_VALUE;
 
-            for mv in board.iter_legal_moves(red).collect::<Box<_>>() {
-                let capture = board.play(mv);
-                let (value, count) = search(board, !red, depth - 1, -upper_bound, -lower_bound);
-                board.undo(mv, capture);
+            for mv in game.iter_moves().rev().collect::<Box<_>>() {
+                game.make_move(mv);
+                let (value, count) = search(game, depth - 1, -upper, -lower);
+                game.undo_move();
 
-                lower_bound = lower_bound.max(-value);
+                best = best.max(-value);
+                lower = lower.max(-value);
                 total += count;
 
-                if lower_bound >= upper_bound {
+                if lower >= upper {
                     break;
                 }
             }
 
-            (lower_bound, total)
+            (best, total)
         }
 
-        for entry in &mut self.entries {
-            let capture = self.board.play(entry.mv);
-            let (value, checked) = search(&mut self.board, !self.red_turn, depth, Self::MIN_VALUE, Self::MAX_VALUE);
-            self.board.undo(entry.mv, capture);
+        let mut lower = Self::MIN_VALUE;
+
+        for entry in self.entries.iter_mut() {
+            self.game.make_move(entry.mv);
+            let (value, checked) = search(&mut self.game, depth, Self::MIN_VALUE, -lower);
+            self.game.undo_move();
+
+            entry.value = -value;
+            entry.checked += checked;
+            lower = lower.max(-value);
+        }
+    }
+
+    pub fn rank_simple(&mut self, depth: u32) {
+        fn search(game: &mut Game, depth: u32) -> (i32, u32) {
+            if depth == 0 {
+                return (game.evaluate(), 1);
+            }
+
+            let mut total = 0u32;
+            let mut best = Ranker::MIN_VALUE;
+
+            for mv in game.iter_moves().collect::<Box<_>>() {
+                game.make_move(mv);
+                let (value, count) = search(game, depth - 1);
+                game.undo_move();
+
+                total += count;
+                best = best.max(-value);
+            }
+
+            (best, total)
+        }
+
+        for entry in self.entries.iter_mut() {
+            self.game.make_move(entry.mv);
+            let (value, checked) = search(&mut self.game, depth);
+            self.game.undo_move();
 
             entry.value = -value;
             entry.checked += checked;
