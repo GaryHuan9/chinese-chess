@@ -124,6 +124,13 @@ impl Board {
         })
     }
 
+    // pub fn iter_basic_moves_new(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
+    //     let iter_piece_moves =
+    //         |(index, &piece): (usize, &Option<Piece>)| -> impl DoubleEndedIterator<Item = Move> { .. };
+    //
+    //     self.pieces.iter().enumerate().filter_map(iter_piece_moves).flatten()
+    // }
+
     pub fn iter_basic_moves(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
         let mut moves = vec![];
         for (index, &piece) in self.pieces.iter().enumerate() {

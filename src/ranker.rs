@@ -14,11 +14,10 @@ struct Entry {
     value: i32,
     checked: u32,
 }
+const MIN_VALUE: i32 = -(i32::MAX - 1000);
+const MAX_VALUE: i32 = -MIN_VALUE;
 
 impl Ranker {
-    const MIN_VALUE: i32 = -(i32::MAX - 42);
-    const MAX_VALUE: i32 = -Self::MIN_VALUE;
-
     pub fn new(game: Game) -> Ranker {
         let entries = game
             .iter_moves()
@@ -77,56 +76,94 @@ impl Ranker {
             return (game.evaluate(), 1);
         }
 
-        let mut play_stack: Vec<Move> = game.iter_moves().collect();
-        let mut undo_stack: Vec<(u32, i32, i32, i32)> = vec![(0, Self::MIN_VALUE, Self::MIN_VALUE, -lower)];
-        let mut total_checked = 0;
+        struct Branch {
+            best: i32,
+            mark: u32,
+            lower: i32,
+            upper: i32,
+        }
 
-        while let Some(mv) = play_stack.pop() {
+        impl Branch {
+            fn new(lower: i32, upper: i32, mark: usize) -> Self {
+                Self {
+                    best: MIN_VALUE,
+                    mark: mark as u32,
+                    lower,
+                    upper,
+                }
+            }
+
+            fn record(&mut self, value: i32) -> Option<usize> {
+                self.best = self.best.max(value);
+                self.lower = self.lower.max(value);
+                if self.lower >= self.upper {
+                    return Some(self.mark as usize);
+                }
+                None
+            }
+        }
+
+        let mut moves: Vec<Move> = game.iter_moves().collect();
+        let mut stack: Vec<Branch> = vec![];
+        let mut branch = Branch::new(MIN_VALUE, -lower, 0);
+        let mut checked = 0;
+
+        while let Some(mv) = moves.pop() {
             game.make_move(mv);
 
-            if (undo_stack.len() as u32) < depth {
-                let &(_, _, lower, upper) = undo_stack.last().unwrap();
-                let (lower, upper) = (-upper, -lower);
-                undo_stack.push((play_stack.len() as u32, Self::MIN_VALUE, lower, upper));
-                play_stack.extend(game.iter_moves());
-                continue;
-            }
-
-            total_checked += 1;
-            let value = game.evaluate();
-            game.undo_move();
-
-            let (height, best, lower, upper) = undo_stack.last_mut().unwrap();
-            *best = (*best).max(-value);
-            *lower = (*lower).max(-value);
-            if *lower >= *upper {
-                play_stack.truncate(*height as usize);
-            }
-
-            while let &(height, value, _, _) = undo_stack.last().unwrap()
-                && height == play_stack.len() as u32
-            {
-                if undo_stack.len() == 1 {
-                    break;
+            let value = if (stack.len() as u32) < depth - 1 {
+                // search deeper
+                let length = moves.len();
+                moves.extend(game.iter_moves());
+                if length != moves.len() {
+                    // has children
+                    let new_branch = Branch::new(-branch.upper, -branch.lower, length);
+                    stack.push(branch);
+                    branch = new_branch;
+                    continue;
                 }
 
-                undo_stack.pop();
+                // opponent has no move left
+                MAX_VALUE
+            } else {
+                // reached leaf node
+                checked += 1;
+                -game.evaluate()
+            };
+
+            game.undo_move();
+
+            if let Some(mark) = branch.record(value) {
+                // prune branch
+                moves.truncate(mark);
+            }
+
+            while branch.mark == moves.len() as u32 {
+                // no more to search on this branch
+                let Some(old_branch) = stack.pop() else {
+                    // entire search complete
+                    assert!(moves.is_empty());
+                    break;
+                };
+
+                // continue back to parent branch
+                let value = -branch.best;
+                branch = old_branch;
+
                 game.undo_move();
 
-                let (height, best, lower, upper) = undo_stack.last_mut().unwrap();
-                *best = (*best).max(-value);
-                *lower = (*lower).max(-value);
-                if *lower >= *upper {
-                    play_stack.truncate(*height as usize);
+                if let Some(mark) = branch.record(value) {
+                    // prune branch
+                    moves.truncate(mark);
                 }
             }
         }
 
-        (undo_stack.last().unwrap().1, total_checked)
+        (branch.best, checked)
     }
 
     pub fn rank(&mut self, depth: u32) {
-        let mut lower = Self::MIN_VALUE;
+        let mut lower = MIN_VALUE;
 
         for entry in &mut self.entries {
             self.game.make_move(entry.mv);
@@ -146,7 +183,7 @@ impl Ranker {
             }
 
             let mut total = 0u32;
-            let mut best = Ranker::MIN_VALUE;
+            let mut best = MIN_VALUE;
 
             for mv in game.iter_moves().rev().collect::<Box<_>>() {
                 game.make_move(mv);
@@ -165,11 +202,11 @@ impl Ranker {
             (best, total)
         }
 
-        let mut lower = Self::MIN_VALUE;
+        let mut lower = MIN_VALUE;
 
         for entry in self.entries.iter_mut() {
             self.game.make_move(entry.mv);
-            let (value, checked) = search(&mut self.game, depth, Self::MIN_VALUE, -lower);
+            let (value, checked) = search(&mut self.game, depth, MIN_VALUE, -(lower - 1));
             self.game.undo_move();
 
             entry.value = -value;
@@ -185,7 +222,7 @@ impl Ranker {
             }
 
             let mut total = 0u32;
-            let mut best = Ranker::MIN_VALUE;
+            let mut best = MIN_VALUE;
 
             for mv in game.iter_moves().collect::<Box<_>>() {
                 game.make_move(mv);
