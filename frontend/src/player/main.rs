@@ -46,13 +46,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     // game.make_move("a9a8".parse()?);
     // game.make_move("d8d7".parse()?);
     // game.make_move("b7d8".parse()?);
-    // let game = Game::from_fen("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", true).unwrap();
+    // let mut game = Game::from_fen("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", false).unwrap();
+    // game.make_move("c9b7".parse()?);
+    // game.make_move("e9e8".parse()?);
+    // game.make_move("a9a8".parse()?);
     println!("{}", game.display(DisplayFormat::pretty()));
 
     let mut ranker = Ranker::new(game.clone());
-    let depth = 6;
+    let depth = 4;
 
-    ranker.rank(depth);
+    ranker.rank_simple(depth);
     println!("{}", ranker.display(DisplayFormat::pretty()));
 
     {
