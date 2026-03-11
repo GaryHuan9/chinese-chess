@@ -1,5 +1,5 @@
-use crate::display_format::DisplayFormat;
-use std::fmt::{Display, Formatter};
+use crate::display_format::{AnsiEffects, DisplayFormat};
+use std::fmt::{Display, Formatter, Write};
 use std::num::NonZeroI8;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -91,9 +91,9 @@ impl Piece {
 
                 if format.effects {
                     if piece.is_red() {
-                        write!(f, "\x1B[31m")?;
+                        f.write_str(AnsiEffects::RED)?;
                     } else {
-                        write!(f, "\x1B[1m")?;
+                        f.write_str(AnsiEffects::BOLD)?;
                     }
                 }
 
@@ -138,7 +138,7 @@ impl Piece {
                 };
 
                 if format.effects {
-                    write!(f, "\x1B[0m")?;
+                    f.write_str(AnsiEffects::CLEAR)?;
                 }
 
                 Ok(())

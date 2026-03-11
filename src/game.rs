@@ -1,8 +1,9 @@
 use crate::board::Board;
-use crate::display_format::DisplayFormat;
+use crate::display_format::{AnsiEffects, DisplayFormat};
 use crate::location::{Location, Move};
 use crate::piece::{Piece, PieceKind};
 use std::fmt::{Display, Formatter};
+use std::ops::Index;
 
 #[derive(Clone)]
 pub struct Game {
@@ -36,12 +37,8 @@ impl Game {
         Some(Self::new(Board::from_fen(fen)?, red_turn))
     }
 
-    pub fn board(&self) -> &Board {
-        &self.board
-    }
-
-    pub fn red_turn(&self) -> bool {
-        self.red_turn
+    pub fn fen(&self) -> (String, bool) {
+        (self.board.fen(), self.red_turn)
     }
 
     pub fn iter_moves(&self) -> impl DoubleEndedIterator<Item = Move> {
@@ -53,6 +50,8 @@ impl Game {
     }
 
     pub fn make_move(&mut self, mv: Move) {
+        debug_assert!(self.can_move(mv));
+
         let piece = self.board[mv.from].unwrap();
         assert_eq!(self.red_turn, piece.is_red());
 
@@ -66,10 +65,11 @@ impl Game {
         self.history.push((mv, capture));
     }
 
-    pub fn undo_move(&mut self) {
+    pub fn undo_move(&mut self) -> Move {
         let (mv, capture) = self.history.pop().unwrap();
         self.red_turn = !self.red_turn;
         self.board.undo_move(mv, capture);
+        mv
     }
 
     pub fn can_move(&self, mv: Move) -> bool {
@@ -119,7 +119,13 @@ impl Game {
                         if let Some(piece) = game.board[location] {
                             let piece = piece.display(format.with_concise(true));
                             if format.effects && mv.to == location {
-                                write!(f, " \x1B[3;4m{piece}\x1B[0m")?;
+                                write!(
+                                    f,
+                                    " {}{}{piece}{}",
+                                    AnsiEffects::ITALICS,
+                                    AnsiEffects::UNDERLINE,
+                                    AnsiEffects::CLEAR
+                                )?;
                             } else {
                                 write!(f, " {piece}")?;
                             }
@@ -207,7 +213,7 @@ impl Game {
                 if let Some(outcome) = game.outcome() {
                     write!(f, "{}", outcome.display(format))?;
                 } else {
-                    let check = game.board().king_in_check(game.red_turn);
+                    let check = game.board.king_in_check(game.red_turn);
                     let king = Piece::from_kind(PieceKind::King, game.red_turn).display(format);
                     write!(f, "{king} {} - ", if check { "in check" } else { "to play" })?;
                     write!(f, "{} legal moves", game.iter_moves().count())?;
@@ -222,6 +228,13 @@ impl Game {
 impl Display for Game {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display(DisplayFormat::string()))
+    }
+}
+
+impl Index<Location> for Game {
+    type Output = Option<Piece>;
+    fn index(&self, index: Location) -> &Self::Output {
+        &self.board[index]
     }
 }
 

@@ -15,10 +15,8 @@ pub enum PlayerMessage {
 
 impl ArbiterMessage {
     pub fn from_game(game: &Game) -> ArbiterMessage {
-        Self::Game {
-            fen: game.board().fen(),
-            red_turn: game.red_turn(),
-        }
+        let (fen, red_turn) = game.fen();
+        Self::Game { fen, red_turn }
     }
 }
 

@@ -7,6 +7,8 @@ pub struct DisplayFormat {
     pub concise: bool,
 }
 
+pub struct AnsiEffects;
+
 static DEFAULT_CHINESE: AtomicBool = AtomicBool::new(true);
 static DEFAULT_EFFECTS: AtomicBool = AtomicBool::new(true);
 
@@ -41,4 +43,12 @@ impl DisplayFormat {
     pub fn set_default_effects(effects: bool) {
         DEFAULT_EFFECTS.store(effects, Ordering::Relaxed);
     }
+}
+
+impl AnsiEffects {
+    pub const CLEAR: &'static str = "\x1B[0m";
+    pub const RED: &'static str = "\x1B[31m";
+    pub const BOLD: &'static str = "\x1B[1m";
+    pub const ITALICS: &'static str = "\x1B[3m";
+    pub const UNDERLINE: &'static str = "\x1B[4m";
 }
