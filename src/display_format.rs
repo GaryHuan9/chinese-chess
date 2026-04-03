@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::LazyLock;
 
 #[derive(Copy, Clone)]
 pub struct DisplayFormat {
@@ -9,8 +10,17 @@ pub struct DisplayFormat {
 
 pub struct AnsiEffects;
 
-static DEFAULT_CHINESE: AtomicBool = AtomicBool::new(true);
-static DEFAULT_EFFECTS: AtomicBool = AtomicBool::new(true);
+static DEFAULT_CHINESE: LazyLock<AtomicBool> =
+    LazyLock::new(|| AtomicBool::new(std::env::var("CHINESE").ok().and_then(|s| s.parse().ok()) != Some(false)));
+
+static DEFAULT_EFFECTS: LazyLock<AtomicBool> = LazyLock::new(|| {
+    AtomicBool::new(
+        std::env::var("EFFECTS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| std::io::IsTerminal::is_terminal(&std::io::stdout())),
+    )
+});
 
 impl DisplayFormat {
     pub fn default(concise: bool) -> Self {

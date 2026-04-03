@@ -33,6 +33,7 @@ fn display_difference(ranker: &Ranker, reference: &Ranker) {
     if lines.is_empty() {
         println!("no difference");
     } else {
+        println!("differences:");
         println!("{}", lines.join("\n"));
     }
 }
@@ -46,21 +47,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     // game.make_move("a9a8".parse()?);
     // game.make_move("d8d7".parse()?);
     // game.make_move("b7d8".parse()?);
-    // let mut game = Game::from_fen("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", false).unwrap();
+    // let mut game = Game::from_fen("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", true).unwrap();
     // game.make_move("c9b7".parse()?);
     // game.make_move("e9e8".parse()?);
     // game.make_move("a9a8".parse()?);
     println!("{}", game.display(DisplayFormat::pretty()));
 
-    let mut ranker = Ranker::new(game.clone());
     let depth = 4;
 
-    ranker.rank_simple(depth);
+    let mut ranker = Ranker::new(game.clone());
+    ranker.rank(depth);
+    println!("{}", ranker.display(DisplayFormat::pretty()));
+
+    let mut ranker = Ranker::new(game.clone());
+    ranker.rank_recursive(depth);
     println!("{}", ranker.display(DisplayFormat::pretty()));
 
     {
         let mut reference = Ranker::new(game.clone());
-        reference.rank_recursive(depth);
+        reference.rank_simple(depth);
+        println!("{}", reference.display(DisplayFormat::pretty()));
         display_difference(&ranker, &reference);
     }
 

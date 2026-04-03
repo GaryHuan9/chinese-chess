@@ -10,13 +10,14 @@ pub struct Ranker {
     entries: Box<[(Move, Option<Rank>)]>,
 }
 
+#[derive(Debug)]
 struct Rank {
     value: i32,
     chain: VecDeque<Move>,
     evaluated: u32,
 }
 
-const MIN_VALUE: i32 = -(i32::MAX - 1000);
+const MIN_VALUE: i32 = -(i32::MAX / 1000000 * 1000000);
 
 impl Ranker {
     pub fn new(game: Game) -> Ranker {
@@ -60,6 +61,7 @@ impl Ranker {
                 return Rank::new(game.evaluate());
             }
 
+            #[derive(Debug)]
             struct Branch {
                 mark: u32,
                 lower: i32,

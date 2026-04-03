@@ -1,14 +1,14 @@
 use crate::board::Board;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::str::FromStr;
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Location {
     x: i8,
     y: i8,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Move {
     pub from: Location,
     pub to: Location,
@@ -82,6 +82,12 @@ impl Display for Location {
     }
 }
 
+impl Debug for Location {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl FromStr for Location {
     type Err = ParseError;
 
@@ -100,6 +106,12 @@ impl FromStr for Location {
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.from, self.to)
+    }
+}
+
+impl Debug for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
