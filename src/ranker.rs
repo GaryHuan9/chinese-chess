@@ -17,7 +17,8 @@ struct Rank {
     evaluated: u32,
 }
 
-const MIN_VALUE: i32 = -(i32::MAX / 1000000 * 1000000);
+const MIN_VALUE: i32 = -2_000_000_000;
+const MULTIPLIER: i32 = 100;
 
 impl Ranker {
     pub fn new(game: Game) -> Ranker {
@@ -337,10 +338,10 @@ impl Rank {
                 value
             }
             Some(rank) => {
+                other.chain.push_front(mv);
                 if Self::compare(&rank, &other).is_lt() {
                     rank.value = other.value;
                     rank.chain = other.chain;
-                    rank.chain.push_front(mv);
                 }
 
                 rank.evaluated += other.evaluated;
