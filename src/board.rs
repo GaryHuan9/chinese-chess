@@ -110,29 +110,47 @@ impl Board {
     }
 
     pub fn iter_legal_moves(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
-        let mut copy = self.clone();
-
-        self.iter_basic_moves(red).filter(move |mv| {
-            let capture = copy.make_move(*mv);
-            let Some(king) = copy.find_king(red) else {
-                copy.undo_move(*mv, capture);
-                return false;
-            };
-            let legal = copy.iter_basic_moves(!red).filter(|mv| mv.to == king).next();
-            copy.undo_move(*mv, capture);
-            legal.is_none()
-        })
+        let mut moves = Vec::new();
+        self.fill_legal_moves(red, &mut moves);
+        moves.into_iter()
     }
 
-    // pub fn iter_basic_moves_new(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
-    //     let iter_piece_moves =
-    //         |(index, &piece): (usize, &Option<Piece>)| -> impl DoubleEndedIterator<Item = Move> { .. };
-    //
-    //     self.pieces.iter().enumerate().filter_map(iter_piece_moves).flatten()
-    // }
+    pub fn fill_legal_moves(&self, red: bool, moves: &mut Vec<Move>) {
+        let Some(king) = self.find_king(red) else { return };
 
-    pub fn iter_basic_moves(&self, red: bool) -> impl DoubleEndedIterator<Item = Move> {
-        let mut moves = vec![];
+        let mut copy = self.clone();
+
+        let old_length = moves.len();
+        self.fill_basic_moves(red, moves);
+        let new_length = moves.len();
+
+        let mut index = old_length;
+
+        for i in old_length..new_length {
+            let mv = moves[i];
+            let king = if self[mv.from].unwrap().kind() == PieceKind::King {
+                mv.to
+            } else {
+                king
+            };
+
+            let capture = copy.make_move(mv);
+            copy.fill_basic_moves(!red, moves);
+
+            let legal = moves[new_length..].iter().all(|mv| mv.to != king);
+            if legal {
+                moves[index] = mv;
+                index += 1;
+            }
+
+            moves.truncate(new_length);
+            copy.undo_move(mv, capture);
+        }
+
+        moves.truncate(index);
+    }
+
+    pub fn fill_basic_moves(&self, red: bool, moves: &mut Vec<Move>) {
         for (index, &piece) in self.pieces.iter().enumerate() {
             let from = Location::from_index(index).unwrap();
             let Some(piece) = piece else { continue };
@@ -141,13 +159,11 @@ impl Board {
             }
 
             let mut add = |to: Option<Location>| {
-                let Some(to) = to else { return };
-                if let Some(piece) = self[to]
-                    && piece.is_red() == red
+                if let Some(to) = to
+                    && self[to].map(Piece::is_red) != Some(red)
                 {
-                    return;
+                    moves.push(Move { from, to });
                 }
-                moves.push(Move { from, to });
             };
 
             match piece.kind() {
@@ -289,7 +305,6 @@ impl Board {
                 }
             }
         }
-        moves.into_iter()
     }
 
     pub fn display(&self, format: DisplayFormat) -> impl Display {

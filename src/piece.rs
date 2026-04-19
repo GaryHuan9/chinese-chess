@@ -42,16 +42,16 @@ impl Piece {
         Self { data }
     }
 
-    pub fn is_red(&self) -> bool {
+    pub fn is_red(self) -> bool {
         self.data.is_positive()
     }
 
-    pub fn kind(&self) -> PieceKind {
+    pub fn kind(self) -> PieceKind {
         let data = self.data.abs().get() - 1;
         unsafe { std::mem::transmute(data) }
     }
 
-    pub fn fen(&self) -> char {
+    pub fn fen(self) -> char {
         let result = match self.kind() {
             PieceKind::King => 'k',
             PieceKind::Advisor => 'a',
@@ -68,7 +68,7 @@ impl Piece {
         }
     }
 
-    pub fn base_value(&self, red: bool) -> i32 {
+    pub fn base_value(self, red: bool) -> i32 {
         let value = match self.kind() {
             PieceKind::King => 10000000,
             PieceKind::Advisor => 2000,
@@ -81,9 +81,9 @@ impl Piece {
         if self.is_red() == red { value } else { -value }
     }
 
-    pub fn display(&self, format: DisplayFormat) -> impl Display + use<> {
+    pub fn display(self, format: DisplayFormat) -> impl Display + use<> {
         struct Impl(Piece, DisplayFormat);
-        return Impl(*self, format);
+        return Impl(self, format);
 
         impl Display for Impl {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

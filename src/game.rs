@@ -45,6 +45,10 @@ impl Game {
         self.board.iter_legal_moves(self.red_turn)
     }
 
+    pub fn fill_moves(&self, moves: &mut Vec<Move>) {
+        self.board.fill_legal_moves(self.red_turn, moves);
+    }
+
     pub fn evaluate(&self) -> i32 {
         self.board.evaluate(self.red_turn)
     }

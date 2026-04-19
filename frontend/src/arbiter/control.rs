@@ -166,11 +166,10 @@ fn begin_compete(stream: LineStream) -> Result<(), Box<dyn std::error::Error>> {
             let line = line.trim().to_lowercase();
 
             let mv = {
+                let mut moves = game.iter_moves().collect::<Vec<_>>();
                 if let Ok(mv) = line.parse::<Move>() {
-                    Some(mv)
+                    if moves.contains(&mv) { Some(mv) } else { None }
                 } else {
-                    let mut moves = game.iter_moves().collect::<Vec<_>>();
-
                     for (i, char) in line.chars().enumerate() {
                         if moves.len() <= 1 {
                             break;
