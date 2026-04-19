@@ -1,31 +1,31 @@
 use crate::display_format::DisplayFormat;
 use crate::game::Game;
 use crate::location::Move;
-use std::cmp::Ordering;
-use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
+use std::ops::Neg;
 
 pub struct Ranker {
     game: Game,
-    entries: Box<[(Move, Option<Rank>)]>,
+    entries: Box<[Entry]>,
 }
 
 #[derive(Debug)]
-struct Rank {
-    value: i32,
-    chain: VecDeque<Move>,
+struct Entry {
+    mv: Move,
+    rank: Rank,
+    chain: Vec<Move>,
     evaluated: u32,
 }
 
-const MIN_VALUE: i32 = -2_000_000_000;
-const MULTIPLIER: i32 = 100;
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Rank {
+    data: i32,
+}
 
 impl Ranker {
-    pub fn new(game: Game) -> Ranker {
-        let entries = game.iter_moves().map(|mv| (mv, None)).collect();
-        let result = Ranker { game, entries };
-        assert!(result.is_sorted());
-        result
+    pub fn new(game: Game) -> Self {
+        let entries = game.iter_moves().map(Entry::new).collect();
+        Self { game, entries }
     }
 
     pub fn game(&self) -> &Game {
@@ -33,184 +33,129 @@ impl Ranker {
     }
 
     pub fn best(&self) -> Option<Move> {
-        assert!(self.is_sorted());
-        self.entries.first().map(|&(mv, _)| mv)
+        self.entries.iter().max_by_key(|entry| entry.rank).map(|entry| entry.mv)
     }
 
     pub fn make_move(&mut self, mv: Move) {
-        assert!(self.entries.iter().find(|(m, _)| *m == mv).is_some());
+        assert!(self.entries.iter().find(|entry| entry.mv == mv).is_some());
         self.game.make_move(mv);
-        self.entries = self.game.iter_moves().map(|mv| (mv, None)).collect();
-        assert!(self.is_sorted());
+        self.entries = self.game.iter_moves().map(Entry::new).collect();
     }
 
     pub fn rank(&mut self, depth: u32) {
-        let mut lower = MIN_VALUE;
+        let mut moves = Vec::new();
+        let upper = Rank::mate(0);
+        let mut lower = -upper;
 
-        for (mv, rank) in &mut self.entries {
-            self.game.make_move(*mv);
-            let value = Rank::replace(rank, search(&mut self.game, depth, MIN_VALUE, -(lower - 1), rank).rev());
+        for entry in &mut self.entries {
+            self.game.make_move(entry.mv);
+
+            let (rank, chain) = search(
+                depth,
+                &mut self.game,
+                &mut moves,
+                &mut entry.evaluated,
+                0,
+                -upper,
+                -lower,
+            );
+
+            let rank = -rank;
             self.game.undo_move();
 
-            lower = lower.max(value);
+            entry.rank = rank;
+            entry.chain = chain;
+            entry.chain.reverse();
+
+            lower = lower.max(rank.one_less());
         }
 
-        self.sort();
-
-        fn search(game: &mut Game, depth: u32, lower: i32, upper: i32, rank: &Option<Rank>) -> Rank {
-            if depth == 0 {
-                return Rank::new(game.evaluate());
+        fn search(
+            max_depth: u32,
+            game: &mut Game,
+            moves: &mut Vec<Move>,
+            evaluated: &mut u32,
+            depth: u32,
+            lower: Rank,
+            upper: Rank,
+        ) -> (Rank, Vec<Move>) {
+            if depth == max_depth {
+                *evaluated += 1;
+                return (Rank::new(game.evaluate()), Vec::new());
             }
 
-            #[derive(Debug)]
-            struct Branch {
-                mark: u32,
-                lower: i32,
-                upper: i32,
-                rank: Option<Rank>,
-            }
+            let mut best_rank = -Rank::mate(depth);
+            let mut best_chain = Vec::new();
+            let mut lower = lower;
 
-            impl Branch {
-                fn new(mark: usize, lower: i32, upper: i32) -> Self {
-                    Self {
-                        mark: mark as u32,
-                        lower,
-                        upper,
-                        rank: None,
-                    }
-                }
+            let old_length = moves.len();
+            moves.extend(game.iter_moves());
+            let new_length = moves.len();
 
-                fn record(&mut self, rank: Rank, mv: Move) -> Option<usize> {
-                    let value = Rank::combine(&mut self.rank, rank, mv);
-                    self.lower = self.lower.max(value);
-
-                    if self.lower >= self.upper {
-                        Some(self.mark as usize)
-                    } else {
-                        None
-                    }
-                }
-            }
-
-            let mut moves: Vec<Move> = game.iter_moves().collect();
-            let mut stack: Vec<Branch> = vec![];
-            let mut branch = Branch::new(0, lower, upper);
-
-            while let Some(mv) = moves.pop() {
+            for i in old_length..new_length {
+                let mv = moves[i];
                 game.make_move(mv);
 
-                let rank = if (stack.len() as u32) < depth - 1 {
-                    // search deeper
-                    let length = moves.len();
-                    moves.extend(game.iter_moves());
-                    if length != moves.len() {
-                        // has children
-                        let new_branch = Branch::new(length, -branch.upper, -branch.lower);
-                        stack.push(branch);
-                        branch = new_branch;
-                        continue;
-                    }
+                let (rank, chain) = search(max_depth, game, moves, evaluated, depth + 1, -upper, -lower);
+                debug_assert!(moves.len() == new_length);
 
-                    // opponent has no move left
-                    Rank::minimum()
-                } else {
-                    // reached leaf node
-                    Rank::new(game.evaluate())
-                };
-
+                let rank = -rank;
                 game.undo_move();
 
-                if let Some(mark) = branch.record(rank.rev(), mv) {
-                    // prune branch
-                    moves.truncate(mark);
-                }
+                if best_rank < rank {
+                    best_rank = rank;
+                    best_chain = chain;
+                    best_chain.push(mv);
 
-                while branch.mark == moves.len() as u32 {
-                    // no more to search on this branch
-                    let Some(old_branch) = stack.pop() else {
-                        // entire search complete
-                        assert!(moves.is_empty());
-                        break;
-                    };
-
-                    // continue back to parent branch
-                    let rank = branch.rank.unwrap_or_else(Rank::minimum);
-                    branch = old_branch;
-
-                    let mv = game.undo_move();
-
-                    if let Some(mark) = branch.record(rank.rev(), mv) {
-                        // prune branch
-                        moves.truncate(mark);
+                    if lower < rank {
+                        lower = rank;
+                        if lower >= upper {
+                            break;
+                        }
                     }
                 }
             }
 
-            branch.rank.unwrap_or_else(Rank::minimum)
-        }
-    }
-
-    pub fn rank_recursive(&mut self, depth: u32) {
-        let mut lower = MIN_VALUE;
-
-        for (mv, rank) in &mut self.entries {
-            self.game.make_move(*mv);
-            let value = Rank::replace(rank, search(&mut self.game, depth, MIN_VALUE, -(lower - 1)).rev());
-            self.game.undo_move();
-
-            lower = lower.max(value);
-        }
-
-        self.sort();
-
-        fn search(game: &mut Game, depth: u32, mut lower: i32, upper: i32) -> Rank {
-            if depth == 0 {
-                return Rank::new(game.evaluate());
-            }
-
-            let depth = depth - 1;
-            let mut rank = None;
-
-            for mv in game.iter_moves().rev().collect::<Box<_>>() {
-                game.make_move(mv);
-                let value = Rank::combine(&mut rank, search(game, depth, -upper, -lower).rev(), mv);
-                game.undo_move();
-
-                lower = lower.max(value);
-
-                if lower >= upper {
-                    break;
-                }
-            }
-
-            rank.unwrap_or_else(Rank::minimum)
+            moves.truncate(old_length);
+            (best_rank, best_chain)
         }
     }
 
     pub fn rank_simple(&mut self, depth: u32) {
-        for (mv, rank) in &mut self.entries {
-            self.game.make_move(*mv);
-            Rank::replace(rank, search(&mut self.game, depth).rev());
+        for entry in &mut self.entries {
+            self.game.make_move(entry.mv);
+            let (rank, chain) = search(&mut self.game, &mut entry.evaluated, depth, 0);
+            let rank = -rank;
             self.game.undo_move();
+
+            entry.rank = rank;
+            entry.chain = chain;
+            entry.chain.reverse();
         }
 
-        self.sort();
-
-        fn search(game: &mut Game, depth: u32) -> Rank {
-            if depth == 0 {
-                return Rank::new(game.evaluate());
+        fn search(game: &mut Game, evaluated: &mut u32, max_depth: u32, depth: u32) -> (Rank, Vec<Move>) {
+            if depth == max_depth {
+                *evaluated += 1;
+                return (Rank::new(game.evaluate()), Vec::new());
             }
 
-            let depth = depth - 1;
-            let mut rank = None;
+            let mut best_rank = -Rank::mate(depth);
+            let mut best_chain = Vec::new();
 
-            for mv in game.iter_moves().rev().collect::<Box<_>>() {
+            for mv in game.iter_moves().collect::<Box<_>>() {
                 game.make_move(mv);
-                Rank::combine(&mut rank, search(game, depth).rev(), mv);
+                let (rank, chain) = search(game, evaluated, max_depth, depth + 1);
+                let rank = -rank;
                 game.undo_move();
+
+                if best_rank < rank {
+                    best_rank = rank;
+                    best_chain = chain;
+                    best_chain.push(mv);
+                }
             }
 
-            rank.unwrap_or_else(Rank::minimum)
+            (best_rank, best_chain)
         }
     }
 
@@ -220,10 +165,11 @@ impl Ranker {
 
         impl Display for Impl<'_> {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                let &Self(ranker, format) = self;
-                assert!(ranker.is_sorted());
+                let format = self.1;
+                let mut entries = self.0.entries.iter().collect::<Box<_>>();
+                entries.sort_by_key(|entry| -entry.rank);
 
-                let Some((best_mv, Some(best))) = ranker.entries.first() else {
+                let Some((best, worst)) = entries.first().zip(entries.last()) else {
                     write!(f, "{{}}")?;
                     return if format.concise { Ok(()) } else { writeln!(f) };
                 };
@@ -232,44 +178,35 @@ impl Ranker {
                     return write!(
                         f,
                         "{} = {} / {} ({})",
-                        best_mv,
-                        best.value,
+                        best.mv,
+                        best.rank,
                         best.chain.len(),
                         best.evaluated
                     );
                 }
 
-                let Some((_, Some(worst))) = ranker.entries.last() else {
-                    unreachable!()
-                };
+                let length = |rank: Rank| rank.to_string().len();
+                let width = length(best.rank).max(length(worst.rank));
 
-                let length = |n: i32| n.to_string().len();
-                let width = length(best.value).max(length(worst.value));
-
-                for (mv, rank) in &ranker.entries {
-                    let piece = ranker.game[mv.from].unwrap();
-                    let Some(rank) = rank else {
-                        writeln!(f, "{} {} unranked", mv, piece.display(format.with_concise(true)))?;
-                        continue;
-                    };
-
-                    let best = rank.value == best.value;
+                for entry in &entries {
+                    let mut game = self.0.game.clone();
+                    let piece = game[entry.mv.from].unwrap();
+                    let best = entry.rank == best.rank;
 
                     write!(
                         f,
                         "{} {} {} {:width$} / {} ({})",
-                        mv,
+                        entry.mv,
                         piece.display(format.with_concise(true)),
                         if best { '=' } else { '≤' },
-                        rank.value,
-                        rank.chain.len(),
-                        rank.evaluated,
+                        entry.rank,
+                        entry.chain.len(),
+                        entry.evaluated,
                     )?;
 
-                    let mut game = ranker.game.clone();
-                    game.make_move(*mv);
+                    game.make_move(entry.mv);
 
-                    for (i, &mv) in rank.chain.iter().enumerate() {
+                    for (i, &mv) in entry.chain.iter().enumerate() {
                         match i {
                             0 => write!(f, ": ")?,
                             c if c == if best { 5 } else { 3 } => {
@@ -288,89 +225,61 @@ impl Ranker {
                     writeln!(f)?
                 }
 
-                Ok(())
+                let total = entries.iter().map(|entry| entry.evaluated).sum::<u32>();
+                writeln!(f, "{total} evaluated",)
             }
         }
-    }
-
-    fn sort(&mut self) {
-        self.entries
-            .sort_by(|(_, a), (_, b)| Rank::compare_option(a, b).reverse());
-    }
-
-    fn is_sorted(&self) -> bool {
-        self.entries
-            .is_sorted_by(|(_, a), (_, b)| Rank::compare_option(a, b).is_ge())
     }
 }
 
 impl Rank {
+    const CHECKMATE_VALUE: i32 = 2_000_000_000;
+    const CHECKMATE_DEPTH_LIMIT: u32 = 100;
+
     fn new(value: i32) -> Rank {
+        debug_assert!(value.abs() < Self::CHECKMATE_VALUE);
+        Self { data: value }
+    }
+
+    fn mate(depth: u32) -> Rank {
+        debug_assert!(depth < Self::CHECKMATE_DEPTH_LIMIT);
         Self {
-            value,
-            chain: VecDeque::new(),
-            evaluated: 1,
+            data: Self::CHECKMATE_VALUE + (Self::CHECKMATE_DEPTH_LIMIT - depth - 1) as i32,
         }
     }
 
-    fn minimum() -> Rank {
+    fn one_less(self) -> Rank {
+        Self { data: self.data - 1 }
+    }
+}
+
+impl Neg for Rank {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self { data: -self.data }
+    }
+}
+
+impl Display for Rank {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.data)
+    }
+}
+
+impl std::fmt::Debug for Rank {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Entry {
+    fn new(mv: Move) -> Entry {
         Self {
-            value: MIN_VALUE,
-            chain: VecDeque::new(),
+            mv,
+            rank: Rank::new(0),
+            chain: Vec::new(),
             evaluated: 0,
-        }
-    }
-
-    fn rev(self) -> Rank {
-        Self {
-            value: -self.value,
-            chain: self.chain,
-            evaluated: self.evaluated,
-        }
-    }
-
-    fn combine(rank: &mut Option<Self>, mut other: Rank, mv: Move) -> i32 {
-        match rank.as_mut() {
-            None => {
-                other.chain.push_front(mv);
-                let value = other.value;
-                *rank = Some(other);
-                value
-            }
-            Some(rank) => {
-                other.chain.push_front(mv);
-                if Self::compare(&rank, &other).is_lt() {
-                    rank.value = other.value;
-                    rank.chain = other.chain;
-                }
-
-                rank.evaluated += other.evaluated;
-                rank.value
-            }
-        }
-    }
-
-    fn replace(rank: &mut Option<Self>, mut other: Rank) -> i32 {
-        if let Some(rank) = rank {
-            other.evaluated += rank.evaluated;
-        }
-        let value = other.value;
-        *rank = Some(other);
-        value
-    }
-
-    fn compare(a: &Self, b: &Self) -> Ordering {
-        let short = a.chain.len().cmp(&b.chain.len());
-        let short = if a.value < 0 { short } else { short.reverse() };
-        a.value.cmp(&b.value).then(short)
-    }
-
-    fn compare_option(a: &Option<Self>, b: &Option<Self>) -> Ordering {
-        match (a, b) {
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => Ordering::Less,
-            (Some(_), None) => Ordering::Greater,
-            (Some(a), Some(b)) => Self::compare(a, b),
         }
     }
 }

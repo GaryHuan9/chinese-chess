@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     game.make_move("c9b7".parse()?);
     game.make_move("e8d9".parse()?);
     game.make_move("b9d9".parse()?);
-    // game.make_move("e9e8".parse()?);
+    game.make_move("e9e8".parse()?);
     // game.make_move("a9a8".parse()?);
     // game.make_move("d8d7".parse()?);
     // game.make_move("b7d8".parse()?);
@@ -53,22 +53,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     // game.make_move("a9a8".parse()?);
     println!("{}", game.display(DisplayFormat::pretty()));
 
-    let depth = 4;
+    let depth = 5;
 
     let mut ranker = Ranker::new(game.clone());
     ranker.rank(depth);
     println!("{}", ranker.display(DisplayFormat::pretty()));
 
-    let mut ranker = Ranker::new(game.clone());
-    ranker.rank_recursive(depth);
-    println!("{}", ranker.display(DisplayFormat::pretty()));
-
-    {
-        let mut reference = Ranker::new(game.clone());
-        reference.rank_simple(depth);
-        println!("{}", reference.display(DisplayFormat::pretty()));
-        display_difference(&ranker, &reference);
-    }
+    // {
+    //     let mut reference = Ranker::new(game.clone());
+    //     reference.rank_simple(depth);
+    //     println!("{}", reference.display(DisplayFormat::pretty()));
+    //     display_difference(&ranker, &reference);
+    // }
 
     return Ok(());
     let arguments = Arguments::parse();
