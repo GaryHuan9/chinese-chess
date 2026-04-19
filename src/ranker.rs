@@ -88,16 +88,17 @@ impl Ranker {
             let mut best_chain = Vec::new();
             let mut lower = lower;
 
-            let old_length = moves.len();
-            moves.extend(game.iter_moves());
-            let new_length = moves.len();
+            // let old_length = moves.len();
+            // moves.extend(game.iter_moves());
+            // let new_length = moves.len();
 
-            for i in old_length..new_length {
-                let mv = moves[i];
+            // for i in old_length..new_length {
+            for mv in game.iter_moves().collect::<Box<_>>() {
+                // let mv = moves[i];
                 game.make_move(mv);
 
                 let (rank, chain) = search(max_depth, game, moves, evaluated, depth + 1, -upper, -lower);
-                debug_assert!(moves.len() == new_length);
+                // debug_assert!(moves.len() == new_length);
 
                 let rank = -rank;
                 game.undo_move();
@@ -116,7 +117,7 @@ impl Ranker {
                 }
             }
 
-            moves.truncate(old_length);
+            // moves.truncate(old_length);
             (best_rank, best_chain)
         }
     }
@@ -226,7 +227,7 @@ impl Ranker {
                 }
 
                 let total = entries.iter().map(|entry| entry.evaluated).sum::<u32>();
-                writeln!(f, "{total} evaluated",)
+                write!(f, "{total} evaluated",)
             }
         }
     }
