@@ -371,6 +371,7 @@ impl Debug for Board {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn node_count(fen: &str, depth: u32) -> usize {
         let mut board = Board::from_fen(fen).unwrap();
@@ -407,78 +408,167 @@ mod tests {
         result
     }
 
-    fn assert_count(fen: &str, counts: &[usize]) {
-        for (depth, &expected) in counts.iter().enumerate() {
-            let depth = (depth + 1) as u32;
-            assert_eq!(expected, node_count(fen, depth), "depth: {depth}");
-        }
-    }
-
     // perft numbers from https://www.chessprogramming.org/Chinese_Chess_Perft_Results
 
-    #[test]
-    fn perft_opening() {
-        let results = &[44, 1920, 79666, 3290240, 133312995];
-        assert_count("rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR", results);
+    #[rstest]
+    #[case::depth1(1, 44)]
+    #[case::depth2(2, 1920)]
+    #[case::depth3(3, 79666)]
+    #[case::depth4(4, 3290240)]
+    #[case::depth5(5, 133312995)]
+    fn perft_opening(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position2() {
-        let results = &[38, 1128, 43929, 1339047, 53112976];
-        assert_count("r1ea1a3/4kh3/2h1e4/pHp1p1p1p/4c4/6P2/P1P2R2P/1CcC5/9/2EAKAE2", results);
+    #[rstest]
+    #[case::depth1(1, 38)]
+    #[case::depth2(2, 1128)]
+    #[case::depth3(3, 43929)]
+    #[case::depth4(4, 1339047)]
+    #[case::depth5(5, 53112976)]
+    fn perft_position2(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("r1ea1a3/4kh3/2h1e4/pHp1p1p1p/4c4/6P2/P1P2R2P/1CcC5/9/2EAKAE2", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position3() {
-        let results = &[7, 281, 8620, 326201, 10369923];
-        assert_count("1ceak4/9/h2a5/2p1p3p/5cp2/2h2H3/6PCP/3AE4/2C6/3A1K1H1", results);
+    #[rstest]
+    #[case::depth1(1, 7)]
+    #[case::depth2(2, 281)]
+    #[case::depth3(3, 8620)]
+    #[case::depth4(4, 326201)]
+    #[case::depth5(5, 10369923)]
+    fn perft_position3(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("1ceak4/9/h2a5/2p1p3p/5cp2/2h2H3/6PCP/3AE4/2C6/3A1K1H1", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position4() {
-        let results = &[25, 424, 9850, 202884, 4739553, 100055401];
-        assert_count("5a3/3k5/3aR4/9/5r3/5h3/9/3A1A3/5K3/2EC2E2", results);
+    #[rstest]
+    #[case::depth1(1, 25)]
+    #[case::depth2(2, 424)]
+    #[case::depth3(3, 9850)]
+    #[case::depth4(4, 202884)]
+    #[case::depth5(5, 4739553)]
+    #[case::depth6(6, 100055401)]
+    fn perft_position4(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("5a3/3k5/3aR4/9/5r3/5h3/9/3A1A3/5K3/2EC2E2", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position5() {
-        let results = &[28, 516, 14808, 395483, 11842230, 367168327];
-        assert_count("CRH1k1e2/3ca4/4ea3/9/2hr5/9/9/4E4/4A4/4KA3", results);
+    #[rstest]
+    #[case::depth1(1, 28)]
+    #[case::depth2(2, 516)]
+    #[case::depth3(3, 14808)]
+    #[case::depth4(4, 395483)]
+    #[case::depth5(5, 11842230)]
+    #[case::depth6(6, 367168327)]
+    fn perft_position5(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("CRH1k1e2/3ca4/4ea3/9/2hr5/9/9/4E4/4A4/4KA3", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position6() {
-        let results = &[21, 364, 7626, 162837, 3500505, 81195154];
-        assert_count("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", results);
+    #[rstest]
+    #[case::depth1(1, 21)]
+    #[case::depth2(2, 364)]
+    #[case::depth3(3, 7626)]
+    #[case::depth4(4, 162837)]
+    #[case::depth5(5, 3500505)]
+    #[case::depth6(6, 81195154)]
+    fn perft_position6(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position7() {
-        let results = &[28, 222, 6241, 64971, 1914306, 23496493];
-        assert_count("C1hHk4/9/9/9/9/9/h1pp5/E3C4/9/3A1K3", results);
+    #[rstest]
+    #[case::depth1(1, 28)]
+    #[case::depth2(2, 222)]
+    #[case::depth3(3, 6241)]
+    #[case::depth4(4, 64971)]
+    #[case::depth5(5, 1914306)]
+    #[case::depth6(6, 23496493)]
+    fn perft_position7(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("C1hHk4/9/9/9/9/9/h1pp5/E3C4/9/3A1K3", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position8() {
-        let results = &[23, 345, 8124, 149272, 3513104, 71287903];
-        assert_count("4ka3/4a4/9/9/4H4/p8/9/4C3c/7h1/2EK5", results);
+    #[rstest]
+    #[case::depth1(1, 23)]
+    #[case::depth2(2, 345)]
+    #[case::depth3(3, 8124)]
+    #[case::depth4(4, 149272)]
+    #[case::depth5(5, 3513104)]
+    #[case::depth6(6, 71287903)]
+    fn perft_position8(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("4ka3/4a4/9/9/4H4/p8/9/4C3c/7h1/2EK5", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position9() {
-        let results = &[21, 195, 3883, 48060, 933096, 12250386];
-        assert_count("2e1ka3/9/e3H4/4h4/9/9/9/4C4/2p6/2EK5", results);
+    #[rstest]
+    #[case::depth1(1, 21)]
+    #[case::depth2(2, 195)]
+    #[case::depth3(3, 3883)]
+    #[case::depth4(4, 48060)]
+    #[case::depth5(5, 933096)]
+    #[case::depth6(6, 12250386)]
+    fn perft_position9(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("2e1ka3/9/e3H4/4h4/9/9/9/4C4/2p6/2EK5", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position10() {
-        let results = &[30, 830, 22787, 649866, 17920736, 517687990];
-        assert_count("1C2ka3/9/C1Hae1h2/p3p3p/6p2/9/P3P3P/3AE4/3p2c2/c1EAK4", results);
+    #[rstest]
+    #[case::depth1(1, 30)]
+    #[case::depth2(2, 830)]
+    #[case::depth3(3, 22787)]
+    #[case::depth4(4, 649866)]
+    #[case::depth5(5, 17920736)]
+    #[case::depth6(6, 517687990)]
+    fn perft_position10(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("1C2ka3/9/C1Hae1h2/p3p3p/6p2/9/P3P3P/3AE4/3p2c2/c1EAK4", depth),
+            "depth: {depth}"
+        );
     }
 
-    #[test]
-    fn perft_position11() {
-        let results = &[19, 583, 11714, 376467, 8148177, 270587571];
-        assert_count("ChH1k1e2/c3a4/4ea3/9/2hr5/9/9/4C4/4A4/4KA3", results);
+    #[rstest]
+    #[case::depth1(1, 19)]
+    #[case::depth2(2, 583)]
+    #[case::depth3(3, 11714)]
+    #[case::depth4(4, 376467)]
+    #[case::depth5(5, 8148177)]
+    #[case::depth6(6, 270587571)]
+    fn perft_position11(#[case] depth: u32, #[case] expected: usize) {
+        assert_eq!(
+            expected,
+            node_count("ChH1k1e2/c3a4/4ea3/9/2hr5/9/9/4C4/4A4/4KA3", depth),
+            "depth: {depth}"
+        );
     }
 }
