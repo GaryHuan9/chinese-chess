@@ -104,7 +104,7 @@ impl Instance {
                 }
 
                 let mv = loop {
-                    let time = 1000;
+                    let time = 2000;
                     trace!("prompting '{}' for next move with {time}ms remaining", instance.name);
                     instance.send(&ArbiterMessage::Prompt { time }).await?;
 

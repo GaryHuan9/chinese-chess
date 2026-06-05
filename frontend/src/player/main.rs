@@ -39,38 +39,46 @@ fn display_difference(ranker: &Ranker, reference: &Ranker) {
 }
 
 fn test() -> Result<(), Box<dyn Error>> {
-    let mut game = Game::from_fen("CRH1k1e2/3ca4/4ea3/9/2hr5/9/9/4E4/4A4/4KA3", true).unwrap();
-    game.make_move("c9b7".parse()?);
-    game.make_move("e8d9".parse()?);
-    game.make_move("b9d9".parse()?);
-    game.make_move("e9e8".parse()?);
-    // game.make_move("a9a8".parse()?);
-    // game.make_move("d8d7".parse()?);
-    // game.make_move("b7d8".parse()?);
-    // let mut game = Game::from_fen("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", true).unwrap();
-    // game.make_move("c9b7".parse()?);
-    // game.make_move("e9e8".parse()?);
-    // game.make_move("a9a8".parse()?);
-    println!("{}", game.display(DisplayFormat::pretty()));
+    let game = Game::opening();
+    let mut ranker = Ranker::new(game);
 
-    let depth = 5;
-
-    let mut ranker = Ranker::new(game.clone());
-    ranker.rank(depth);
-    println!("{}", ranker.display(DisplayFormat::pretty()));
-
-    {
-        let mut reference = Ranker::new(game.clone());
-        reference.rank_simple(depth);
-        println!("{}", reference.display(DisplayFormat::pretty()));
-        display_difference(&ranker, &reference);
+    for _ in 0..4 {
+        ranker.deeper();
+        println!("{}", ranker.display(DisplayFormat::pretty()));
     }
+
+    // let mut game = Game::from_fen("CRH1k1e2/3ca4/4ea3/9/2hr5/9/9/4E4/4A4/4KA3", true).unwrap();
+    // game.make_move("c9b7".parse()?);
+    // game.make_move("e8d9".parse()?);
+    // game.make_move("b9d9".parse()?);
+    // game.make_move("e9e8".parse()?);
+    // // game.make_move("a9a8".parse()?);
+    // // game.make_move("d8d7".parse()?);
+    // // game.make_move("b7d8".parse()?);
+    // // let mut game = Game::from_fen("R1H1k1e2/9/3aea3/9/2hr5/2E6/9/4E4/4A4/4KA3", true).unwrap();
+    // // game.make_move("c9b7".parse()?);
+    // // game.make_move("e9e8".parse()?);
+    // // game.make_move("a9a8".parse()?);
+    // println!("{}", game.display(DisplayFormat::pretty()));
+    //
+    // let depth = 5;
+    //
+    // let mut ranker = Ranker::new(game.clone());
+    // ranker.rank(depth);
+    // println!("{}", ranker.display(DisplayFormat::pretty()));
+    //
+    // {
+    //     let mut reference = Ranker::new(game.clone());
+    //     reference.simple(depth);
+    //     println!("{}", reference.display(DisplayFormat::pretty()));
+    //     display_difference(&ranker, &reference);
+    // }
 
     Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // return test();
+    return test();
 
     let arguments = Arguments::parse();
 
@@ -91,14 +99,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ranker = Ranker::new(game);
                 stream.write(&PlayerMessage::Ready)?;
             }
-            ArbiterMessage::Prompt { time: _time } => {
+            ArbiterMessage::Prompt { time } => {
                 println!("{}", ranker.game().display(DisplayFormat::pretty()));
+                println!("{time}ms thinking time");
 
                 let start = std::time::Instant::now();
-                ranker.rank(arguments.depth);
-                let elapsed = start.elapsed().as_secs_f32();
+                let time = std::time::Duration::from_millis(time as u64);
+
+                loop {
+                    ranker.deeper();
+
+                    if let Some(remain) = time.checked_sub(start.elapsed()) {
+                        println!(
+                            "({}) {}ms thinking time: {}",
+                            ranker.depth(),
+                            remain.as_millis(),
+                            ranker.display(DisplayFormat::string())
+                        );
+                    } else {
+                        break;
+                    }
+                }
+
+                let duration = start.elapsed();
                 println!("{}", ranker.display(DisplayFormat::pretty()));
-                println!("time {} ms", elapsed * 1000.0);
+                println!("total {}ms thinking time", duration.as_millis());
 
                 if let Some(best) = ranker.best() {
                     stream.write(&PlayerMessage::Play { mv: best })?;

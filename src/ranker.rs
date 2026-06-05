@@ -6,6 +6,7 @@ use std::ops::Neg;
 
 pub struct Ranker {
     game: Game,
+    depth: u32,
     entries: Box<[Entry]>,
 }
 
@@ -22,14 +23,29 @@ struct Rank {
     data: i32,
 }
 
+struct Search<'a> {
+    game: &'a mut Game,
+    max_depth: u32,
+    moves: Vec<Move>,
+    evaluated: u32,
+}
+
 impl Ranker {
     pub fn new(game: Game) -> Self {
         let entries = game.iter_moves().map(Entry::new).collect();
-        Self { game, entries }
+        Self {
+            game,
+            depth: 0,
+            entries,
+        }
     }
 
     pub fn game(&self) -> &Game {
         &self.game
+    }
+
+    pub fn depth(&self) -> u32 {
+        self.depth
     }
 
     pub fn best(&self) -> Option<Move> {
@@ -39,123 +55,42 @@ impl Ranker {
     pub fn make_move(&mut self, mv: Move) {
         assert!(self.entries.iter().find(|entry| entry.mv == mv).is_some());
         self.game.make_move(mv);
+        self.depth = 0;
         self.entries = self.game.iter_moves().map(Entry::new).collect();
     }
 
-    pub fn rank(&mut self, depth: u32) {
-        let mut moves = Vec::new();
+    pub fn deeper(&mut self) {
+        self.depth += 1;
+
+        let mut search = Search {
+            game: &mut self.game,
+            max_depth: self.depth,
+            moves: Vec::new(),
+            evaluated: 0,
+        };
+
         let upper = Rank::mate(0);
         let mut lower = -upper;
 
-        for entry in &mut self.entries {
-            self.game.make_move(entry.mv);
+        let mut entries = self.entries.iter_mut().collect::<Box<_>>();
+        entries.sort_by_key(|entry| -entry.rank);
 
-            let (rank, chain) = search(
-                depth,
-                &mut self.game,
-                &mut moves,
-                &mut entry.evaluated,
-                0,
-                -upper,
-                -lower,
-            );
+        for entry in entries {
+            search.game.make_move(entry.mv);
+            search.evaluated = entry.evaluated;
+            let (rank, chain) = search.chain(0, -upper, -lower, &entry.chain);
+            // let (rank, chain) = search.normal(0, -upper, -lower);
+
+            assert!(search.moves.is_empty());
+            entry.evaluated = search.evaluated;
+            search.game.undo_move();
 
             let rank = -rank;
-            self.game.undo_move();
-
             entry.rank = rank;
             entry.chain = chain;
             entry.chain.reverse();
 
             lower = lower.max(rank.one_less());
-        }
-
-        fn search(
-            max_depth: u32,
-            game: &mut Game,
-            moves: &mut Vec<Move>,
-            evaluated: &mut u32,
-            depth: u32,
-            lower: Rank,
-            upper: Rank,
-        ) -> (Rank, Vec<Move>) {
-            if depth == max_depth {
-                *evaluated += 1;
-                return (Rank::new(game.evaluate()), Vec::new());
-            }
-
-            let mut best_rank = -Rank::mate(depth);
-            let mut best_chain = Vec::new();
-            let mut lower = lower;
-
-            let old_length = moves.len();
-            game.fill_moves(moves);
-            let new_length = moves.len();
-
-            for i in old_length..new_length {
-                let mv = moves[i];
-                game.make_move(mv);
-
-                let (rank, chain) = search(max_depth, game, moves, evaluated, depth + 1, -upper, -lower);
-                debug_assert!(moves.len() == new_length);
-
-                let rank = -rank;
-                game.undo_move();
-
-                if best_rank < rank {
-                    best_rank = rank;
-                    best_chain = chain;
-                    best_chain.push(mv);
-
-                    if lower < rank {
-                        lower = rank;
-                        if lower >= upper {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            moves.truncate(old_length);
-            (best_rank, best_chain)
-        }
-    }
-
-    pub fn rank_simple(&mut self, depth: u32) {
-        for entry in &mut self.entries {
-            self.game.make_move(entry.mv);
-            let (rank, chain) = search(&mut self.game, &mut entry.evaluated, depth, 0);
-            let rank = -rank;
-            self.game.undo_move();
-
-            entry.rank = rank;
-            entry.chain = chain;
-            entry.chain.reverse();
-        }
-
-        fn search(game: &mut Game, evaluated: &mut u32, max_depth: u32, depth: u32) -> (Rank, Vec<Move>) {
-            if depth == max_depth {
-                *evaluated += 1;
-                return (Rank::new(game.evaluate()), Vec::new());
-            }
-
-            let mut best_rank = -Rank::mate(depth);
-            let mut best_chain = Vec::new();
-
-            for mv in game.iter_moves().collect::<Box<_>>() {
-                game.make_move(mv);
-                let (rank, chain) = search(game, evaluated, max_depth, depth + 1);
-                let rank = -rank;
-                game.undo_move();
-
-                if best_rank < rank {
-                    best_rank = rank;
-                    best_chain = chain;
-                    best_chain.push(mv);
-                }
-            }
-
-            (best_rank, best_chain)
         }
     }
 
@@ -226,7 +161,7 @@ impl Ranker {
                 }
 
                 let total = entries.iter().map(|entry| entry.evaluated).sum::<u32>();
-                write!(f, "{total} evaluated",)
+                write!(f, "depth {} with {total} evaluation", self.0.depth)
             }
         }
     }
@@ -281,5 +216,107 @@ impl Entry {
             chain: Vec::new(),
             evaluated: 0,
         }
+    }
+}
+
+impl<'a> Search<'a> {
+    fn base(&mut self, depth: u32) -> Option<(Rank, Vec<Move>)> {
+        if depth == self.max_depth {
+            self.evaluated += 1;
+            Some((Rank::new(self.game.evaluate()), Vec::new()))
+        } else {
+            None
+        }
+    }
+
+    fn chain(&mut self, depth: u32, lower: Rank, upper: Rank, chain: &Vec<Move>) -> (Rank, Vec<Move>) {
+        if let Some(base) = self.base(depth) {
+            return base;
+        }
+
+        let Some(best) = chain.get(depth as usize) else {
+            return self.normal(depth, lower, upper);
+        };
+
+        let old_length = self.moves.len();
+        self.game.fill_moves(&mut self.moves);
+
+        let best = self.moves[old_length..].iter().position(|mv| mv == best);
+        let mv = self.moves.swap_remove(old_length + best.unwrap());
+
+        self.game.make_move(mv);
+
+        let (rank, chain) = self.chain(depth + 1, -upper, -lower, chain);
+
+        self.game.undo_move();
+
+        let mut lower = lower;
+        let rank = -rank;
+        let mut chain = chain;
+        chain.push(mv);
+
+        if lower < rank {
+            lower = rank;
+            if lower >= upper {
+                self.moves.truncate(old_length);
+                return (rank, chain);
+            }
+        }
+
+        self.normal_recurse(depth, lower, upper, old_length, rank, chain)
+    }
+
+    fn normal(&mut self, depth: u32, lower: Rank, upper: Rank) -> (Rank, Vec<Move>) {
+        if let Some(base) = self.base(depth) {
+            return base;
+        }
+
+        let old_length = self.moves.len();
+        self.game.fill_moves(&mut self.moves);
+
+        self.normal_recurse(depth, lower, upper, old_length, -Rank::mate(depth), Vec::new())
+    }
+
+    fn normal_recurse(
+        &mut self,
+        depth: u32,
+        lower: Rank,
+        upper: Rank,
+        old_length: usize,
+        best_rank: Rank,
+        best_chain: Vec<Move>,
+    ) -> (Rank, Vec<Move>) {
+        let new_length = self.moves.len();
+
+        let mut lower = lower;
+        let mut best_rank = best_rank;
+        let mut best_chain = best_chain;
+
+        for i in old_length..new_length {
+            let mv = self.moves[i];
+            self.game.make_move(mv);
+
+            let (rank, chain) = self.normal(depth + 1, -upper, -lower);
+            debug_assert!(self.moves.len() == new_length);
+
+            self.game.undo_move();
+
+            let rank = -rank;
+            if best_rank < rank {
+                best_rank = rank;
+                best_chain = chain;
+                best_chain.push(mv);
+
+                if lower < rank {
+                    lower = rank;
+                    if lower >= upper {
+                        break;
+                    }
+                }
+            }
+        }
+
+        self.moves.truncate(old_length);
+        (best_rank, best_chain)
     }
 }
