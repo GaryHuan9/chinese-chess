@@ -78,7 +78,7 @@ impl Ranker {
         for entry in entries {
             search.game.make_move(entry.mv);
             search.evaluated = entry.evaluated;
-            let (rank, chain) = search.chain(0, -upper, -lower, &entry.chain);
+            let (rank, chain) = search.hinted(0, -upper, -lower, &entry.chain);
             // let (rank, chain) = search.normal(0, -upper, -lower);
 
             assert!(search.moves.is_empty());
@@ -220,24 +220,12 @@ impl Entry {
 }
 
 impl<'a> Search<'a> {
-    fn base(&mut self, depth: u32) -> Option<(Rank, Vec<Move>)> {
-        if depth == self.max_depth {
-            self.evaluated += 1;
-            Some((Rank::new(self.game.evaluate()), Vec::new()))
-        } else {
-            None
-        }
-    }
-
-    fn chain(&mut self, depth: u32, lower: Rank, upper: Rank, chain: &Vec<Move>) -> (Rank, Vec<Move>) {
-        if let Some(base) = self.base(depth) {
-            return base;
-        }
-
+    fn hinted(&mut self, depth: u32, lower: Rank, upper: Rank, chain: &Vec<Move>) -> (Rank, Vec<Move>) {
         let Some(best) = chain.get(depth as usize) else {
             return self.normal(depth, lower, upper);
         };
 
+        assert!(depth < self.max_depth);
         let old_length = self.moves.len();
         self.game.fill_moves(&mut self.moves);
 
@@ -246,7 +234,7 @@ impl<'a> Search<'a> {
 
         self.game.make_move(mv);
 
-        let (rank, chain) = self.chain(depth + 1, -upper, -lower, chain);
+        let (rank, chain) = self.hinted(depth + 1, -upper, -lower, chain);
 
         self.game.undo_move();
 
@@ -263,21 +251,48 @@ impl<'a> Search<'a> {
             }
         }
 
-        self.normal_recurse(depth, lower, upper, old_length, rank, chain)
+        self.recurse(depth, lower, upper, old_length, rank, chain)
     }
 
     fn normal(&mut self, depth: u32, lower: Rank, upper: Rank) -> (Rank, Vec<Move>) {
-        if let Some(base) = self.base(depth) {
-            return base;
+        if depth == self.max_depth {
+            self.evaluated += 1;
+            return (Rank::new(self.game.evaluate()), Vec::new());
         }
 
         let old_length = self.moves.len();
         self.game.fill_moves(&mut self.moves);
 
-        self.normal_recurse(depth, lower, upper, old_length, -Rank::mate(depth), Vec::new())
+        self.recurse(depth, lower, upper, old_length, -Rank::mate(depth), Vec::new())
     }
 
-    fn normal_recurse(
+    // fn capture(&mut self, depth: u32, lower: Rank, upper: Rank) -> (Rank, Vec<Move>) {
+    //     if depth == self.max_depth {
+    //         self.evaluated += 1;
+    //         return (Rank::new(self.game.evaluate()), Vec::new());
+    //     }
+    //
+    //     let old_length = self.moves.len();
+    //     self.game.fill_moves(&mut self.moves);
+    //
+    //     let mut index = old_length;
+    //
+    //     for i in old_length..self.moves.len() {
+    //         let mv = self.moves[i];
+    //
+    //         let capture = self.game.make_move(mv);
+    //
+    //         self.game.undo_move();
+    //
+    //         if true {}
+    //
+    //         self.moves[index] = self.moves[i];
+    //     }
+    //
+    //     self.recurse(depth, lower, upper, old_length, -Rank::mate(depth), Vec::new())
+    // }
+
+    fn recurse(
         &mut self,
         depth: u32,
         lower: Rank,

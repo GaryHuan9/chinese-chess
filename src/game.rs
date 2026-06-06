@@ -54,8 +54,6 @@ impl Game {
     }
 
     pub fn make_move(&mut self, mv: Move) {
-        debug_assert!(self.can_move(mv));
-
         let piece = self.board[mv.from].unwrap();
         assert_eq!(self.red_turn, piece.is_red());
 
