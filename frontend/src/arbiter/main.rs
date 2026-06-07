@@ -14,8 +14,11 @@ use std::thread;
 
 #[derive(Parser)]
 struct Arguments {
-    #[clap(short, long, default_value_t = 5000)]
+    #[clap(short, long, default_value_t = 6000)]
     port: u16,
+
+    #[clap(short, long, help = "Commands to execute on startup")]
+    exec: Vec<String>,
 }
 
 fn main() {
@@ -45,15 +48,15 @@ fn main() {
         .init();
 
     let tournament: Arc<RwLock<Tournament>> = Tournament::new();
-    let address = format!("127.0.0.1:{}", arguments.port);
 
     {
         let tournament = tournament.clone();
-        let address = address.clone();
-        thread::spawn(move || control::begin(tournament, address));
+        let exec_commands = arguments.exec.clone();
+        thread::spawn(move || control::begin(tournament, exec_commands));
     }
 
     smol::block_on(async {
+        let address = format!("127.0.0.1:{}", arguments.port);
         let listener = smol::net::TcpListener::bind(&address).await.unwrap();
         info!("server listening at {address}");
 
@@ -88,6 +91,6 @@ async fn initialize_connection(
 
     info!("connection initialized as instance for player '{name}'");
     let mut tournament = tournament.write().map_err(|_| "tournament poisoned")?;
-    tournament.join(name, stream);
+    tournament.join(&name, stream);
     Ok(())
 }

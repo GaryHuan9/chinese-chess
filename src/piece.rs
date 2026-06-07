@@ -1,5 +1,5 @@
 use crate::display_format::{AnsiEffects, DisplayFormat};
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Display, Formatter};
 use std::num::NonZeroI8;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

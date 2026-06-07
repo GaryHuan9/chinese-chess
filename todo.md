@@ -1,0 +1,8 @@
+- remove and inline the root level ranking
+- add move ordering
+- add transposition table
+- change location to be one byte (90 indices)
+- change move to be two bytes (90 * 90 * 2 bits) and have move type
+- search for captures and checks after depth is exhausted
+- optimize move generation
+- change arbiter to use a Contest struct to manage an ongoing match between two players

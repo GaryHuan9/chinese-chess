@@ -2,7 +2,7 @@ use crate::arbiter::tournament::status::Status;
 use crate::line_stream::AsyncLineStream;
 use log::debug;
 use player::Player;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Div;
 use std::sync::{Arc, RwLock, Weak};
 
@@ -29,15 +29,19 @@ impl Tournament {
         })
     }
 
-    pub fn join(&mut self, name: String, stream: AsyncLineStream) {
-        let id = self.ids.get(&name).copied().unwrap_or_else(|| {
+    fn get_or_create_id(&mut self, name: &str) -> PlayerId {
+        self.ids.get(name).copied().unwrap_or_else(|| {
             let id = self.players.len() as PlayerId;
-            let player = Player::new(id, name.clone());
+            let player = Player::new(id, name.to_owned());
             self.players.push(Arc::new(RwLock::new(player)));
-            self.ids.insert(name.clone(), id);
+            self.ids.insert(name.to_owned(), id);
 
             id
-        });
+        })
+    }
+
+    pub fn join(&mut self, name: &str, stream: AsyncLineStream) {
+        let id = self.get_or_create_id(name);
 
         {
             let mut player = self.players[id].write().unwrap();
@@ -48,8 +52,9 @@ impl Tournament {
     }
 
     #[must_use]
-    pub fn enqueue(&'_ self, name: &str) -> Option<Queue<'_>> {
-        self.ids.get(name).copied().map(|id| Queue::new(self, id))
+    pub fn enqueue(&'_ mut self, name: &str) -> Queue<'_> {
+        let id = self.get_or_create_id(name);
+        Queue::new(self, id)
     }
 
     pub fn status(&self, name: &str) -> Option<impl Iterator<Item = (String, Status)>> {
@@ -138,13 +143,13 @@ impl Tournament {
 }
 
 pub struct Queue<'a> {
-    tournament: &'a Tournament,
+    tournament: &'a mut Tournament,
     player: PlayerId,
     pending: Vec<(String, bool, u32)>,
 }
 
 impl<'a> Queue<'a> {
-    fn new(tournament: &'a Tournament, player: PlayerId) -> Self {
+    fn new(tournament: &'a mut Tournament, player: PlayerId) -> Self {
         Self {
             tournament,
             player,
@@ -153,49 +158,30 @@ impl<'a> Queue<'a> {
     }
 
     #[must_use]
-    pub fn against(mut self, name: String, count: u32) -> Self {
-        self.pending.push((name.clone(), true, count.div_ceil(2)));
-        self.pending.push((name, false, count.div(2)));
-        self
-    }
-
-    #[must_use]
-    pub fn against_all_except<T, I>(mut self, except: I, count: u32) -> Self
-    where
-        T: for<'b> PartialEq<&'b str>,
-        I: IntoIterator<Item = T>,
-    {
-        let mut except = except.into_iter();
-        for (name, id) in &self.tournament.ids {
-            if *id != self.player && except.all(|n| n != name) {
-                self = self.against(name.clone(), count);
+    pub fn against(mut self, name: String, count: u32, as_red: Option<bool>) -> Self {
+        match as_red {
+            None => {
+                self.pending.push((name.clone(), true, count.div_ceil(2)));
+                self.pending.push((name, false, count.div(2)));
+            }
+            Some(as_red) => {
+                self.pending.push((name, as_red, count));
             }
         }
         self
     }
+}
 
-    #[must_use]
-    pub fn against_as(mut self, name: String, red: bool) -> Self {
-        self.pending.push((name, red, 1));
-        self
-    }
-
-    pub fn done(self) -> Result<(), impl IntoIterator<Item = String>> {
-        let mut unknown = HashSet::new();
-
-        for (name, home, count) in self.pending {
-            let Some(id) = self.tournament.ids.get(&name).copied() else {
-                unknown.insert(name);
-                continue;
-            };
-
+impl Drop for Queue<'_> {
+    fn drop(&mut self) {
+        for (name, home, count) in self.pending.drain(..) {
             if count > 0 {
+                let id = self.tournament.get_or_create_id(&name);
                 let (home, away) = if home { (self.player, id) } else { (id, self.player) };
                 self.tournament.players[home].write().unwrap().enqueue(away, count);
             }
         }
 
         self.tournament.match_all();
-        if unknown.is_empty() { Ok(()) } else { Err(unknown) }
     }
 }

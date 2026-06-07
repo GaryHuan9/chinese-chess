@@ -33,12 +33,16 @@ impl Game {
         Self::new(Board::opening(), true)
     }
 
-    pub fn from_fen(fen: &str, red_turn: bool) -> Option<Self> {
-        Some(Self::new(Board::from_fen(fen)?, red_turn))
+    pub fn board(&self) -> &Board {
+        &self.board
     }
 
-    pub fn fen(&self) -> (String, bool) {
-        (self.board.fen(), self.red_turn)
+    pub fn red_turn(&self) -> bool {
+        self.red_turn
+    }
+
+    pub fn history(&self) -> &[(Move, Option<Piece>)] {
+        &self.history
     }
 
     pub fn iter_moves(&self) -> impl DoubleEndedIterator<Item = Move> {
@@ -243,7 +247,6 @@ impl Index<Location> for Game {
 impl Outcome {
     pub fn display(&self, format: DisplayFormat) -> impl Display {
         let king = |red| Piece::from_kind(PieceKind::King, red);
-        let format = format.with_concise(false);
         match self {
             Self::RedWon => format!("{} won by checkmating black", king(true).display(format)),
             Self::BlackWon => format!("{} won by checkmating red", king(false).display(format)),
