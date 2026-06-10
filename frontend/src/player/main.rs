@@ -45,7 +45,6 @@ fn test() -> Result<(), Box<dyn Error>> {
     // let game = Game::opening();
     let board = Board::from_fen("1CRakae2/9/4c4/9/3P3h1/4p4/P4rP1P/4E2r1/H2H4R/3AKA3").unwrap();
     let game = Game::new(board, true);
-    // 1h1a2Ch1/4k3C/2cae4/p1p1p1pHp/3c5/8P/P3P4/4E3H/4A4/2EAK4 ?? why not move elephant
 
     println!("{}", game.display(DisplayFormat::pretty()));
 
