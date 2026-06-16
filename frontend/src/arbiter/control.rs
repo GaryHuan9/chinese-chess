@@ -1,5 +1,7 @@
 use crate::arbiter::tournament::Tournament;
 use clap::{Parser, Subcommand};
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 use std::sync::{Arc, RwLock};
 
 #[derive(Subcommand, Debug)]
@@ -37,22 +39,18 @@ struct Input<T: clap::FromArgMatches + clap::Subcommand> {
     command: T,
 }
 
-pub fn begin(tournament: Arc<RwLock<Tournament>>, exec: Vec<String>) {
-    for cmd_str in exec {
-        let parts = cmd_str.split_whitespace();
-        match Input::<Command>::try_parse_from(parts) {
+pub fn begin(tournament: Arc<RwLock<Tournament>>, exec: &[String], mut console: DefaultEditor) {
+    for command in exec {
+        match Input::<Command>::try_parse_from(command.split_whitespace()) {
             Ok(Input { command }) => execute_command(&tournament, command),
-            Err(err) => {
-                println!("Error parsing exec command '{}': {}", cmd_str, err);
+            Err(error) => {
+                println!("Error parsing exec command '{}': {}", command, error);
             }
         }
     }
-    begin_control(tournament);
-}
 
-fn begin_control(tournament: Arc<RwLock<Tournament>>) {
     loop {
-        let command = read_input::<Command>();
+        let command = read_input::<Command>(&mut console);
         execute_command(&tournament, command);
     }
 }
@@ -95,18 +93,24 @@ fn execute_command(tournament: &Arc<RwLock<Tournament>>, command: Command) {
     }
 }
 
-fn read_input<T: clap::FromArgMatches + clap::Subcommand>() -> T {
+fn read_input<T: clap::FromArgMatches + clap::Subcommand>(console: &mut DefaultEditor) -> T {
     loop {
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line).unwrap();
+        match console.readline(">> ") {
+            Ok(line) => {
+                let _ = console.add_history_entry(&line);
 
-        let parts = line.split_whitespace();
-
-        match Input::<T>::try_parse_from(parts) {
-            Ok(Input { command }) => return command,
-            Err(err) => {
-                print!("{}", err);
-                continue;
+                match Input::<T>::try_parse_from(line.split_whitespace()) {
+                    Ok(Input { command }) => break command,
+                    Err(error) => {
+                        println!("{}", error);
+                    }
+                };
+            }
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
+                std::process::exit(0);
+            }
+            Err(error) => {
+                println!("{}", error);
             }
         };
     }

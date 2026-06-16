@@ -1,4 +1,5 @@
 use chrono::Local;
+use clap::error::ErrorKind;
 use clap::Parser;
 use env_logger::Target;
 use frontend::arbiter::control;
@@ -6,6 +7,7 @@ use frontend::arbiter::tournament::Tournament;
 use frontend::line_stream::AsyncLineStream;
 use frontend::protocol::{PlayerMessage, Protocol};
 use log::{info, warn, LevelFilter};
+use rustyline::ExternalPrinter;
 use smol::net::TcpStream as AsyncTcpStream;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -19,40 +21,22 @@ struct Arguments {
 
     #[clap(short, long, help = "Commands to execute on startup")]
     exec: Vec<String>,
+
+    #[clap(long, default_value_t = LevelFilter::Trace)]
+    log: LevelFilter,
+
+    #[clap(long)]
+    log_file: Option<String>,
 }
 
 fn main() {
     let arguments = Arguments::parse();
-
-    // let file = std::fs::OpenOptions::new()
-    //     .append(true)
-    //     .create(true)
-    //     .open("log.txt")
-    //     .unwrap();
-
-    env_logger::Builder::from_default_env()
-        .filter_level(LevelFilter::Debug)
-        .filter_level(LevelFilter::max())
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{style}[{}] [{:5}]{style:#} {}",
-                Local::now().format("%T%.3f"),
-                record.level(),
-                record.args(),
-                style = buf.default_level_style(record.level()),
-            )
-        })
-        // .target(Target::Pipe(Box::new(std::io::BufWriter::new(file))))
-        .target(Target::Stderr)
-        .init();
-
+    let console = setup_console(&arguments);
     let tournament: Arc<RwLock<Tournament>> = Tournament::new();
 
     {
         let tournament = tournament.clone();
-        let exec_commands = arguments.exec.clone();
-        thread::spawn(move || control::begin(tournament, exec_commands));
+        thread::spawn(move || control::begin(tournament, &arguments.exec, console));
     }
 
     smol::block_on(async {
@@ -93,4 +77,57 @@ async fn initialize_connection(
     let mut tournament = tournament.write().map_err(|_| "tournament poisoned")?;
     tournament.join(&name, stream);
     Ok(())
+}
+
+fn setup_console(arguments: &Arguments) -> rustyline::DefaultEditor {
+    let mut console = rustyline::DefaultEditor::new().unwrap();
+
+    let target = if let Some(path) = &arguments.log_file {
+        let file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .expect("Failed to open log file");
+        Target::Pipe(Box::new(file))
+    } else {
+        struct Writer<T: ExternalPrinter> {
+            printer: T,
+        }
+
+        impl<T: ExternalPrinter> Write for Writer<T> {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                let line = String::from_utf8_lossy(buf).into_owned();
+                self.printer
+                    .print(line)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+                Ok(buf.len())
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let printer = console.create_external_printer().unwrap();
+        Target::Pipe(Box::new(Writer { printer }))
+    };
+
+    env_logger::Builder::from_default_env()
+        .filter_level(arguments.log)
+        .filter_module("rustyline", LevelFilter::Warn)
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{style}[{}] [{:5}]{style:#} {}",
+                Local::now().format("%T%.3f"),
+                record.level(),
+                record.args(),
+                style = buf.default_level_style(record.level()),
+            )
+        })
+        .target(target)
+        .init();
+
+    console
 }
